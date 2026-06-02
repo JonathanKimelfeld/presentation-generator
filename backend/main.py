@@ -10,6 +10,7 @@ import models.version        # noqa: F401
 import models.topic_resource  # noqa: F401 — registers model with Base
 from resources import router as resources_router
 from export import router as export_router
+from images import router as images_router
 
 from routers import presentations, versions
 
@@ -27,6 +28,7 @@ app.include_router(presentations.router)
 app.include_router(versions.router)
 app.include_router(resources_router.router)
 app.include_router(export_router.router)
+app.include_router(images_router.router)
 
 
 @app.on_event("startup")

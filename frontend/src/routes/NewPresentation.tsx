@@ -28,6 +28,8 @@ const DEFAULT_CONFIG: PresentationConfig = {
   compactness: 3,
   scope: "",
   style: "minimal",
+  content_mode: "verbose" as const,
+  include_visuals: true,
   resource_filters: { videos: true, articles: true, papers: true, courses: true },
   resource_priority: ["video", "paper", "course", "article"],
 };
@@ -233,6 +235,49 @@ export default function NewPresentation() {
           </label>
 
           <div>
+            <label style={{ display: "block", marginBottom: 8, fontWeight: 500, fontSize: 14 }}>
+              Slide content style
+            </label>
+            <div style={{ display: "flex", gap: 8 }}>
+              {(
+                [
+                  { value: "verbose", label: "Verbose", subtext: "Best for learning and self-study" },
+                  { value: "minimal", label: "Minimal", subtext: "Best for presenting to an audience" },
+                ] as { value: "verbose" | "minimal"; label: string; subtext: string }[]
+              ).map(({ value, label, subtext }) => (
+                <div
+                  key={value}
+                  onClick={() => updateConfig("content_mode", value)}
+                  style={{
+                    width: "calc(50% - 4px)",
+                    border: config.content_mode === value ? "2px solid #16a34a" : "1px solid #e5e7eb",
+                    background: config.content_mode === value ? "#f0fdf4" : "#ffffff",
+                    borderRadius: 8,
+                    padding: "12px 16px",
+                    cursor: "pointer",
+                    boxSizing: "border-box" as const,
+                  }}
+                >
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>
+                    {config.content_mode === value ? "● " : "○ "}{label}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{subtext}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={config.include_visuals}
+              onChange={(e) => updateConfig("include_visuals", e.target.checked)}
+              style={{ accentColor: "#16a34a", width: 15, height: 15 }}
+            />
+            Include visual slides (one image per topic)
+          </label>
+
+          <div>
             <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
               Resources to include
             </label>
@@ -322,7 +367,7 @@ export default function NewPresentation() {
 
       {isGenerating && (
         <p style={{ marginTop: 12, fontSize: 13, color: "#888" }}>
-          Building your outline and slides — usually takes 15–30 seconds.
+          Building your presentation — this may take a minute
         </p>
       )}
     </div>

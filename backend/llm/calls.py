@@ -38,8 +38,8 @@ def generate_outline(topic: str, config: PresentationConfig) -> Outline:
     return _call_with_retry(system, user, validate_outline)
 
 
-def generate_slides(topic: str, config: PresentationConfig, outline: Outline) -> list[Slide]:
-    system, user = slides_prompt(topic, config, outline)
+def generate_slides(topic: str, config: PresentationConfig, outline: Outline, resources_by_topic: dict | None = None) -> list[Slide]:
+    system, user = slides_prompt(topic, config, outline, resources_by_topic=resources_by_topic)
     return _call_with_retry(system, user, validate_slides, max_tokens=16000)
 
 

@@ -63,18 +63,44 @@ Rules:
     return _JSON_SYSTEM, user
 
 
-def slides_prompt(topic: str, config: PresentationConfig, outline: Outline) -> tuple[str, str]:
+def slides_prompt(topic: str, config: PresentationConfig, outline: Outline, resources_by_topic: dict | None = None) -> tuple[str, str]:
+    resources_by_topic = resources_by_topic or {}
+    content_mode = getattr(config, "content_mode", "verbose") or "verbose"
+    include_visuals = getattr(config, "include_visuals", True)
+
+    layout_union = "bullets|quote|two-col|title|embed|narrative|mixed"
+    visual_shape = ""
+    visual_rules = ""
+    if include_visuals:
+        layout_union += "|visual"
+        visual_shape = '- visual:    {{ "image_url": "", "image_query": "<specific search query to find a relevant image>", "image_alt": "<descriptive alt text for accessibility>", "caption": "<caption shown below the image>", "description": "<1-2 sentences explaining what this visual shows and why it matters>", "source_refs": [<int>, ...] }}'
+        visual_rules = """
+### Visual slides (only when include_visuals is true)
+
+Use layout "visual" for exactly ONE slide per topic — the topic opener OR a key concept slide.
+- image_query: be specific and visual (e.g. "neural network diagram", "DNA double helix structure") — NOT generic terms
+- image_alt: describe what is in the image for accessibility
+- caption: 1 short sentence identifying the image
+- description: 1-2 sentences explaining relevance to the topic
+- image_url: always leave as empty string "" — it will be filled automatically
+- Do NOT use visual for title slides or summary slides
+- Do NOT use visual more than once per topic"""
+
     user = f"""\
 Generate a complete, self-contained learning presentation.
 
 Topic: "{topic}"
+Content mode: {content_mode}
+Include visuals: {include_visuals}
 
 Config:
   audience: {config.audience or "general — assume no prior knowledge"}
   tone: {config.tone or "conversational and clear"}
   depth: {config.depth or 3}/5
   compactness: {config.compactness or 3}/5
-  style: {config.style or "educational"}
+
+Available resources per topic:
+{json.dumps(resources_by_topic, indent=2)}
 
 Approved outline:
 {json.dumps(outline.model_dump(), indent=2)}
@@ -87,7 +113,7 @@ Return this exact JSON shape and nothing else:
       "topic_id": "<must match a topic id from the outline>",
       "position": "<fractional index string, start at 'aa', increment lexicographically>",
       "title": "<slide title>",
-      "layout": "<bullets|quote|two-col|title|embed>",
+      "layout": "<{layout_union}>",
       "content": <layout-specific object>,
       "speaker_notes": "<full explanation for self-study>",
       "estimated_minutes": <integer>,
@@ -100,135 +126,153 @@ Return this exact JSON shape and nothing else:
 }}
 
 Layout content shapes:
-- bullets: {{ "bullets": ["string", ...] }}
-- quote:   {{ "quote": "string", "attribution": "string" }}
-- two-col: {{ "left": ["string", ...], "right": ["string", ...] }}
-- title:   {{ "heading": "string", "subheading": "string" }}
-- embed:   {{ "url": "string", "caption": "string" }}
+- bullets:   {{ "bullets": ["string", ...], "source_refs": [<int>, ...] }}
+- narrative: {{ "subtitle": "string", "paragraphs": ["string", ...], "source_refs": [<int>, ...] }}
+- mixed:     {{ "subtitle": "string", "intro": "string", "bullets": ["string", ...], "source_refs": [<int>, ...] }}
+- title:     {{ "heading": "string", "subheading": "string" }}
+- quote:     {{ "quote": "string", "attribution": "string" }}
+- two-col:   {{ "left": ["string", ...], "right": ["string", ...] }}
+- embed:     {{ "url": "string", "caption": "string" }}
+{visual_shape}
 
-## CONTENT RULES — READ THESE CAREFULLY
+{visual_rules}
 
-### Rule 1: Write for someone who knows nothing
+## CONTENT MODE RULES
 
-Every slide must be self-explanatory to a smart person encountering this topic for the first time.
-Never assume the reader already understands any term you use. If you introduce a term, define it inline.
+### If content_mode is "verbose" (default):
 
+Use layout "narrative" or "mixed" for most slides.
+Use "bullets" only for summary or checklist slides.
+Use "title" ONLY for the very first slide of the entire presentation — never for topic section openers.
+
+COMBINING RULE — CRITICAL:
+Never create a standalone title slide for a topic section.
+The first slide of each topic must combine the section heading WITH content.
+Use layout "mixed" for every topic opener:
+  subtitle = the topic name as a question or statement
+  intro = 2-3 sentence context paragraph — why this topic matters and what the reader will understand by the end
+  bullets = 3-4 key points covered in this section
+  source_refs = most relevant resource index for this topic
+
+Narrative slide rules:
+  subtitle: a specific insight or question for this slide
+  paragraphs: 2-4 full prose paragraphs per slide
+    Each paragraph: 3-6 sentences
+    First paragraph: establishes context and why this matters
+    Middle paragraphs: explanation, examples, analogies
+    Last paragraph: connects to next slide or summarizes
+  source_refs: indices of resources that support this content
+
+Mixed slide rules:
+  subtitle: specific heading for this slide
+  intro: 1-2 sentence prose that frames the bullets
+  bullets: 3-5 full-sentence supporting points
+  source_refs: indices of relevant resources
+
+Prose writing rules for verbose mode:
+  - Write like a knowledgeable friend explaining out loud
+  - Every abstract concept needs a concrete analogy
+  - Every formula needs a plain English equivalent
+  - Use "Think of it this way:", "Here's the key insight:", "A common mistake is:" to guide the reader
+  - Vary sentence length for readability
+  - Connect each idea explicitly to the previous one
+  - Never use bullet-style fragments inside paragraphs
+
+### If content_mode is "minimal":
+
+Use layout "bullets" for all content slides.
+Use "title" for the very first slide AND for each topic section opener.
+Bullets are concise — label + brief explanation, not long sentences.
+No prose paragraphs.
+Source refs still included where relevant.
+Speaker notes remain full explanations regardless.
+
+## SOURCE REFERENCE RULES (apply to both modes)
+
+Each topic has numbered resources (index 1, 2, 3...) from "Available resources per topic" above.
+Reference them inline in content where relevant.
+
+In narrative paragraphs:
+  End the relevant sentence with [N] where N is the resource index.
+  Example: "The central limit theorem has been verified across thousands of empirical studies [2]."
+
+In bullets:
+  End the bullet with [N].
+  Example: "Averaging independent samples always converges to normal distribution regardless of original shape [1]"
+
+In source_refs array:
+  List all resource indices referenced in this slide.
+  Example: "source_refs": [1, 3]
+
+Only reference resources that are genuinely relevant to the slide content.
+Do not force references. Do not reference more than 3 sources per slide.
+If no resources are available for a topic, omit source_refs or use [].
+
+## SLIDE STRUCTURE RULES
+
+First slide of entire presentation:
+  layout: "title"
+  heading: the topic as a compelling question or statement
+  subheading: "Prerequisites: X, Y, Z" or "Prerequisites: none — start from zero"
+
+First slide of each topic (verbose mode):
+  layout: "mixed"  ← NOT "title" — combine heading with content
+  subtitle: topic name as question or insight statement
+  intro: 2-3 sentences of context
+  bullets: 3-4 key things covered in this section
+  source_refs: most relevant resource for this topic
+
+First slide of each topic (minimal mode):
+  layout: "title"
+  heading: topic name
+  subheading: what this section covers in one sentence
+
+Middle slides of each topic (verbose mode):
+  layout: "narrative" (preferred) or "mixed"
+  One focused concept explained fully per slide.
+
+Last slide of each topic (both modes):
+  layout: "mixed" or "bullets"
+  subtitle: "What you should now understand"
+  Summary of key takeaways. One forward-looking sentence connecting to next topic.
+
+Last slide of entire presentation:
+  layout: "mixed"
+  subtitle: "What you've learned"
+  Complete summary + next steps for the learner
+
+## CONTENT QUALITY RULES
+
+### Write for someone who knows nothing
+Every slide must be self-explanatory. Define every term inline when first introduced.
 Bad:  "• Finite variance: σ² < ∞ is essential"
-Good: "• Finite variance is required — this means the spread of the data must not be infinite. \
-In practice, almost all real-world data satisfies this condition. \
-The notation σ² < ∞ simply means the variance is a finite number."
+Good: "• Finite variance is required — this means the spread of the data must not be infinite. In practice, almost all real-world data satisfies this. The notation σ² < ∞ simply means the variance is a finite number."
 
-### Rule 2: Tell the story before the detail
+### Bullets must be sentences, not labels
+Every bullet point must be a complete sentence that explains something.
+Bad:  "• Berry-Esseen theorem"
+Good: "• The Berry-Esseen theorem tells us exactly how fast the CLT kicks in: the approximation error shrinks at rate 1/√n."
 
-Each slide must open with 1–2 sentences of context that explain WHY this slide matters and WHERE it fits \
-in the bigger picture. Then go into the detail.
-
-Bad:  title: "Conditions and Assumptions", bullets: ["Independence required", "Finite variance"]
-Good: title: "What needs to be true for CLT to work?", first bullet: "The CLT is powerful but not \
-unconditional — it only applies when three things are true about your data. Here is each one explained."
-
-### Rule 3: Use analogies and concrete examples
-
+### Use analogies and concrete examples
 For every abstract concept, include a real-world analogy or concrete numeric example.
 
-Bad:  "• CLT: as n → ∞, sample mean converges to N(μ, σ²/n)"
-Good: "• Imagine measuring the height of 5 random people — the average could be anywhere. \
-Now measure 1000 people: that average will nearly always be close to the true population mean, \
-and its distribution will form a bell curve regardless of how heights are distributed."
-
-### Rule 4: Bullets must be sentences, not labels
-
-Every bullet point must be a complete sentence that explains something. No label-only bullets.
-
-Bad:  "• Berry-Esseen theorem"
-Good: "• The Berry-Esseen theorem tells us exactly how fast the CLT kicks in: the approximation \
-error shrinks at rate 1/√n, so quadrupling your sample size halves the error."
-
-### Rule 5: Build understanding step by step
-
-Slides within each topic must form a logical sequence where each builds on the previous one.
-Never introduce a concept before its prerequisites.
-The first slide of each topic must establish context.
-The last slide of each topic must summarize what was learned.
-
-### Rule 6: Speaker notes are the full explanation
-
+### Speaker notes are the full explanation
 Speaker notes are NOT presenter reminders — they are the complete explanation a self-study learner reads.
-Write speaker notes as if explaining to a friend:
-- Full sentences and paragraphs
-- Include the intuition behind the concept
-- Include what to remember and why it matters
-- Minimum 100 words per slide for non-trivial topics
-- Use phrases like "Think of it this way:", "The key insight here is:", "A common mistake is:"
+Minimum 100 words per slide. Write in full sentences.
+Use phrases like "Think of it this way:", "The key insight here is:", "A common mistake is:"
 
-### Rule 7: Title as a question or insight
-
-Slide titles should be questions or insight statements, not category labels.
-
-Bad:  "Applications of CLT"
-Good: "Where does CLT actually show up in the real world?"
-
-Bad:  "Conditions and Assumptions"
-Good: "Three things that must be true for CLT to work"
-
-### Rule 8: First slide of presentation = prerequisites
-
-The very first slide (layout: "title") must include a subheading listing what the reader should already know:
-"Prerequisites: basic probability, mean and variance"
-If no prerequisites: "Prerequisites: none — start from zero"
-
-### Rule 9: Compactness controls depth, not information density
-
-compactness 1 = long explanations, many bullets (8–10 full sentences each)
-compactness 3 = balanced explanations (5–6 bullets, 1–3 sentences each)
-compactness 5 = concise but never a label — still full explanatory sentences (3–4 bullets)
-
-At ANY compactness level, bullets must still be complete explanatory sentences.
-Compactness only controls how many bullets and how long each one is.
-
-### Rule 10: depth controls technicality
-
+### depth controls technicality
 depth 1 = pure intuition, no formulas, analogies only
 depth 3 = mix of intuition and formal notation, every formula explained in plain English
 depth 5 = full technical detail, proofs, edge cases
 
-At depth 1–2: replace every formula with a plain English equivalent.
-Never show notation without immediately explaining it in words.
-
-## LAYOUT USAGE RULES
-
-"title"   → first slide of each topic section only
-            heading = topic name as a question or insight statement
-            subheading = what this section will explain in one sentence
-
-"bullets" → most slides; 4–8 full-sentence bullets
-
-"two-col" → comparisons, before/after, pros/cons
-            each column gets 3–5 full-sentence bullets
-
-"quote"   → a memorable insight, surprising fact, or key theorem stated plainly
-            use sparingly: max 1 per topic
-
-"embed"   → a YouTube explainer for this specific concept, only when a video would genuinely help
-
-## STRUCTURAL RULES
-
+### Structural rules
 - Generate exactly the slide_count specified per topic in the outline
 - topic_id must match exactly — never invent new topic ids
 - position strings must be unique and lexicographically ordered starting at 'aa'
-- First slide of the whole presentation must use layout "title"
-- confidence.score should reflect content reliability
+- First slide of whole presentation must use layout "title"
+- confidence.score should reflect content reliability"""
 
-## FINAL CHECK BEFORE RETURNING JSON
-
-Before returning, verify each slide:
-□ Does the first bullet provide context or story?
-□ Is every bullet a complete sentence (12+ words)?
-□ Would a smart 16-year-old understand this slide cold?
-□ Does it connect to the previous slide?
-□ Are all terms defined when first introduced?
-
-If any slide fails these checks, rewrite it before returning the JSON."""
     return _JSON_SYSTEM, user
 
 

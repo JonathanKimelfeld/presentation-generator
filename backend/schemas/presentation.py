@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Literal
 
 
 class ResourceFilter(BaseModel):
@@ -17,6 +17,8 @@ class PresentationConfig(BaseModel):
     compactness: int = 3
     scope: str = ""
     style: str = "minimal"
+    content_mode: Literal["verbose", "minimal"] = "verbose"
+    include_visuals: bool = True
     resource_filters: ResourceFilter = Field(default_factory=ResourceFilter)
     resource_priority: list[str] = Field(default_factory=lambda: ["video", "paper", "course", "article"])
 

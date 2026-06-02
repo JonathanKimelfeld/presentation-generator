@@ -1,5 +1,6 @@
 import uuid
 import copy
+import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 from fastapi import APIRouter, Body, BackgroundTasks, Depends, HTTPException
@@ -40,16 +41,42 @@ def _version_to_response(v: Version) -> dict:
     }
 
 
-def _bg_fetch_resources(presentation_id: str, version_id: str, outline: dict, topic: str, resource_filters: dict):
-    from database import SessionLocal
-    db = SessionLocal()
+def _fill_visual_images(slides: list, outline_dict: dict, presentation_topic: str, include_visuals: bool) -> None:
+    if not include_visuals:
+        return
     try:
-        fetch_all_topic_resources(presentation_id, version_id, outline, topic, resource_filters, db)
-    except Exception as e:
-        import logging
-        logging.error(f"Background resource fetch failed: {e}")
-    finally:
-        db.close()
+        from images.fetcher import fetch_slide_image
+    except ImportError:
+        return
+    topic_titles = {t["id"]: t["title"] for t in outline_dict.get("topics", [])}
+    for slide in slides:
+        if slide.layout == "visual":
+            topic_title = topic_titles.get(slide.topic_id, presentation_topic)
+            image_query = slide.content.get("image_query", "") or slide.title
+            try:
+                url = fetch_slide_image(image_query, topic_title, presentation_topic)
+                slide.content["image_url"] = url or ""
+            except Exception as e:
+                logging.error(f"Image fetch failed for slide '{slide.title}': {e}")
+                slide.content["image_url"] = ""
+
+
+def _format_resources_for_llm(resources_by_topic_orm: dict) -> dict:
+    formatted = {}
+    for topic_id, resources in resources_by_topic_orm.items():
+        if not resources:
+            continue
+        formatted[topic_id] = [
+            {
+                "index": i + 1,
+                "title": r.title,
+                "url": r.url,
+                "source_type": r.source_type,
+                "description": r.description or "",
+            }
+            for i, r in enumerate(resources[:8])
+        ]
+    return formatted
 
 
 def _bg_fetch_new_topics(presentation_id: str, version_id: str, new_topic_ids: list[str], outline: dict, topic: str, resource_filters: dict):
@@ -227,15 +254,38 @@ def regen_version(presentation_id: str, background_tasks: BackgroundTasks, body:
         raise HTTPException(status_code=404, detail="Current version not found")
 
     config = PresentationConfig(**(current.config or {}))
+    new_version_id = str(uuid.uuid4())
 
     try:
         outline = generate_outline(pres.topic, config)
-        slides = generate_slides(pres.topic, config, outline)
     except LLMError as e:
         return JSONResponse(
             status_code=500,
             content={"error": "generation_failed", "detail": str(e)},
         )
+
+    # Fetch resources before slide generation
+    try:
+        resources_by_topic_orm = fetch_all_topic_resources(
+            presentation_id, new_version_id, outline.model_dump(), pres.topic,
+            config.resource_filters.model_dump(), db,
+        )
+    except Exception as e:
+        logging.error(f"Resource fetch failed during regen: {e}")
+        resources_by_topic_orm = {}
+
+    formatted_resources = _format_resources_for_llm(resources_by_topic_orm)
+
+    try:
+        slides = generate_slides(pres.topic, config, outline, resources_by_topic=formatted_resources)
+    except LLMError as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "generation_failed", "detail": str(e)},
+        )
+
+    # Fill images for visual slides before committing
+    _fill_visual_images(slides, outline.model_dump(), pres.topic, config.include_visuals)
 
     pos_gen = _position_sequence()
     for slide in slides:
@@ -252,7 +302,7 @@ def regen_version(presentation_id: str, background_tasks: BackgroundTasks, body:
     )
 
     new_version = Version(
-        id=str(uuid.uuid4()),
+        id=new_version_id,
         presentation_id=presentation_id,
         parent_id=current.id,
         created_at=datetime.now(timezone.utc),
@@ -269,15 +319,5 @@ def regen_version(presentation_id: str, background_tasks: BackgroundTasks, body:
     pres.current_version_id = new_version.id
     db.commit()
     db.refresh(new_version)
-
-    config_obj = PresentationConfig(**(current.config or {}))
-    background_tasks.add_task(
-        _bg_fetch_resources,
-        presentation_id,
-        new_version.id,
-        outline.model_dump(),
-        pres.topic,
-        config_obj.resource_filters.model_dump(),
-    )
 
     return _version_to_response(new_version)

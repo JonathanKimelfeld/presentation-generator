@@ -1,8 +1,9 @@
 import uuid
 import copy
+import logging
 from collections import defaultdict
 from datetime import datetime, timezone
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -40,33 +41,86 @@ def _version_to_response(v: Version) -> dict:
     }
 
 
-def _bg_fetch_resources(presentation_id: str, version_id: str, outline: dict, topic: str, resource_filters: dict):
-    from database import SessionLocal
-    db = SessionLocal()
+def _fill_visual_images(slides: list, outline_dict: dict, presentation_topic: str, include_visuals: bool) -> None:
+    """Fill image_url for visual-layout slides by querying Wikipedia/Tavily."""
+    if not include_visuals:
+        return
     try:
-        fetch_all_topic_resources(presentation_id, version_id, outline, topic, resource_filters, db)
-    except Exception as e:
-        import logging
-        logging.error(f"Background resource fetch failed: {e}")
-    finally:
-        db.close()
+        from images.fetcher import fetch_slide_image
+    except ImportError:
+        return
+    topic_titles = {t["id"]: t["title"] for t in outline_dict.get("topics", [])}
+    for slide in slides:
+        if slide.layout == "visual":
+            topic_title = topic_titles.get(slide.topic_id, presentation_topic)
+            image_query = slide.content.get("image_query", "") or slide.title
+            try:
+                url = fetch_slide_image(image_query, topic_title, presentation_topic)
+                slide.content["image_url"] = url or ""
+            except Exception as e:
+                logging.warning(f"Image fetch failed for slide '{slide.title}': {e}")
+                slide.content["image_url"] = ""
+
+
+def _format_resources_for_llm(resources_by_topic_orm: dict) -> dict:
+    """Convert ORM resource objects to plain dicts indexed for LLM prompt."""
+    formatted = {}
+    for topic_id, resources in resources_by_topic_orm.items():
+        if not resources:
+            continue
+        formatted[topic_id] = [
+            {
+                "index": i + 1,
+                "title": r.title,
+                "url": r.url,
+                "source_type": r.source_type,
+                "description": r.description or "",
+            }
+            for i, r in enumerate(resources[:8])
+        ]
+    return formatted
 
 
 @router.post("")
-def create_presentation(body: PresentationCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def create_presentation(body: PresentationCreate, db: Session = Depends(get_db)):
     config = body.config or PresentationConfig()
     config_dict = config.model_dump()
 
+    pres_id = str(uuid.uuid4())
+    version_id = str(uuid.uuid4())
+
     try:
         outline = generate_outline(body.topic, config)
-        slides = generate_slides(body.topic, config, outline)
     except LLMError as e:
         return JSONResponse(
             status_code=500,
             content={"error": "generation_failed", "detail": str(e)},
         )
 
-    # Assign canonical positions (overrides whatever the LLM chose)
+    # Fetch resources before slide generation so the LLM can reference them
+    try:
+        resources_by_topic_orm = fetch_all_topic_resources(
+            pres_id, version_id, outline.model_dump(), body.topic,
+            config.resource_filters.model_dump(), db,
+        )
+    except Exception as e:
+        logging.error(f"Resource fetch failed during creation: {e}")
+        resources_by_topic_orm = {}
+
+    formatted_resources = _format_resources_for_llm(resources_by_topic_orm)
+
+    try:
+        slides = generate_slides(body.topic, config, outline, resources_by_topic=formatted_resources)
+    except LLMError as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "generation_failed", "detail": str(e)},
+        )
+
+    # Fill images for visual slides before committing
+    _fill_visual_images(slides, outline.model_dump(), body.topic, config.include_visuals)
+
+    # Assign canonical positions
     pos_gen = _position_sequence()
     for slide in slides:
         slide.position = next(pos_gen)
@@ -78,12 +132,10 @@ def create_presentation(body: PresentationCreate, background_tasks: BackgroundTa
     for topic in outline.topics:
         topic.slide_ids = topic_to_slides.get(topic.id, [])
 
-    # Aggregate confidence = mean of slide scores
     agg_score = (
         sum(s.confidence.score for s in slides) / len(slides) if slides else 0.0
     )
 
-    pres_id = str(uuid.uuid4())
     pres = Presentation(
         id=pres_id,
         topic=body.topic,
@@ -93,7 +145,7 @@ def create_presentation(body: PresentationCreate, background_tasks: BackgroundTa
     db.add(pres)
 
     version = Version(
-        id=str(uuid.uuid4()),
+        id=version_id,
         presentation_id=pres_id,
         parent_id=None,
         created_at=datetime.now(timezone.utc),
@@ -110,15 +162,6 @@ def create_presentation(body: PresentationCreate, background_tasks: BackgroundTa
     pres.current_version_id = version.id
     db.commit()
     db.refresh(version)
-
-    background_tasks.add_task(
-        _bg_fetch_resources,
-        pres_id,
-        version.id,
-        outline.model_dump(),
-        body.topic,
-        config.resource_filters.model_dump(),
-    )
 
     return _version_to_response(version)
 

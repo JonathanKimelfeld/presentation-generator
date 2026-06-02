@@ -15,6 +15,8 @@ export interface PresentationConfig {
   style: "minimal" | "detailed" | "visual";
   resource_filters: ResourceFilter;
   resource_priority: string[];
+  content_mode: "verbose" | "minimal";
+  include_visuals: boolean;
 }
 
 export interface TopicResource {
@@ -48,7 +50,7 @@ export interface Slide {
   topic_id: string;
   position: string;
   title: string;
-  layout: "bullets" | "quote" | "two-col" | "title" | "embed";
+  layout: "bullets" | "quote" | "two-col" | "title" | "embed" | "narrative" | "mixed" | "visual";
   content: Record<string, unknown>;
   speaker_notes: string;
   estimated_minutes: number;

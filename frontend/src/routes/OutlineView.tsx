@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   DndContext,
@@ -27,7 +27,7 @@ function confidenceColor(score: number): string {
   return "#dc2626";
 }
 
-// ─── SortableResourceRow ─────────────────────────────────────────────────────
+// ─── CompactResourceRow ──────────────────────────────────────────────────────
 
 const SOURCE_ICONS: Record<string, string> = {
   video: "▶",
@@ -36,18 +36,13 @@ const SOURCE_ICONS: Record<string, string> = {
   article: "🔗",
 };
 
-function SortableResourceRow({
+function CompactResourceRow({
   resource,
-  onToggle,
-  onDelete,
+  isLast,
 }: {
   resource: TopicResource;
-  onToggle: (r: TopicResource) => void;
-  onDelete: (id: string) => void;
+  isLast: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: resource.id });
-
   const domain = (() => {
     try {
       return new URL(resource.url).hostname.replace("www.", "");
@@ -57,37 +52,22 @@ function SortableResourceRow({
   })();
 
   const truncatedTitle =
-    resource.title.length > 60 ? resource.title.slice(0, 60) + "…" : resource.title;
+    resource.title.length > 50 ? resource.title.slice(0, 50) + "…" : resource.title;
 
   return (
     <div
-      ref={setNodeRef}
       style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.5 : resource.is_selected ? 1 : 0.45,
         display: "flex",
+        alignItems: "center",
         gap: 8,
-        alignItems: "flex-start",
-        padding: "8px 0",
-        borderBottom: "1px solid #f3f4f6",
+        padding: "6px 12px",
+        borderBottom: isLast ? "none" : "1px solid #f3f4f6",
+        minHeight: 40,
       }}
-      {...attributes}
     >
-      {/* Drag handle */}
-      <div
-        {...listeners}
-        style={{ cursor: "grab", color: "#d1d5db", fontSize: 14, paddingTop: 2, flexShrink: 0 }}
-      >
-        ⠇
-      </div>
-
-      {/* Icon */}
-      <span style={{ fontSize: 14, flexShrink: 0, paddingTop: 1 }}>
+      <span style={{ fontSize: 13, flexShrink: 0, width: 18, textAlign: "center" }}>
         {SOURCE_ICONS[resource.source_type] ?? "🔗"}
       </span>
-
-      {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <a
           href={resource.url}
@@ -104,64 +84,23 @@ function SortableResourceRow({
             whiteSpace: "nowrap",
           }}
           onMouseEnter={(e) => {
-            (e.target as HTMLElement).style.textDecoration = "underline";
-            (e.target as HTMLElement).style.color = "#16a34a";
+            (e.currentTarget as HTMLElement).style.textDecoration = "underline";
+            (e.currentTarget as HTMLElement).style.color = "#16a34a";
           }}
           onMouseLeave={(e) => {
-            (e.target as HTMLElement).style.textDecoration = "none";
-            (e.target as HTMLElement).style.color = "#111827";
+            (e.currentTarget as HTMLElement).style.textDecoration = "none";
+            (e.currentTarget as HTMLElement).style.color = "#111827";
           }}
         >
           {truncatedTitle}
         </a>
-        {resource.description && (
-          <p style={{
-            margin: "2px 0 0",
-            fontSize: 11,
-            color: "#9ca3af",
-            overflow: "hidden",
-            display: "-webkit-box",
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: "vertical",
-          }}>
-            {resource.description}
-          </p>
-        )}
-        <span style={{ fontSize: 11, color: "#16a34a", marginTop: 2, display: "block" }}>
+        <span style={{ fontSize: 11, color: "#9ca3af", display: "block" }}>
           {domain}
         </span>
       </div>
-
-      {/* Right controls */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
-        <span style={{ fontSize: 11, color: "#9ca3af", fontVariantNumeric: "tabular-nums" }}>
-          {Math.round(resource.relevance_score * 100)}%
-        </span>
-        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-          <input
-            type="checkbox"
-            checked={resource.is_selected}
-            onChange={() => onToggle(resource)}
-            style={{ accentColor: "#16a34a", width: 13, height: 13, cursor: "pointer" }}
-          />
-          <button
-            onClick={() => onDelete(resource.id)}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "#d1d5db",
-              fontSize: 14,
-              padding: 0,
-              lineHeight: 1,
-            }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#dc2626"; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "#d1d5db"; }}
-          >
-            ×
-          </button>
-        </div>
-      </div>
+      <span style={{ fontSize: 11, color: "#9ca3af", flexShrink: 0 }}>
+        {Math.round(resource.relevance_score * 100)}%
+      </span>
     </div>
   );
 }
@@ -169,133 +108,81 @@ function SortableResourceRow({
 // ─── ResourcesSection ────────────────────────────────────────────────────────
 
 interface ResourcesSectionProps {
-  topicId: string;
   resources: TopicResource[];
   isLoading: boolean;
-  onRetryFetch: () => void;
-  presentationId: string;
-  versionId: string;
-  resourcesInitialized: boolean;
+  onCollapse: () => void;
+  onRetry: () => void;
 }
 
-function ResourcesSection({
-  resources,
-  isLoading,
-  onRetryFetch,
-  presentationId,
-  resourcesInitialized,
-}: ResourcesSectionProps) {
-  const updateResourceStore = useStore((s) => s.updateResource);
-  const removeResourceStore = useStore((s) => s.removeResource);
-  const [localResources, setLocalResources] = useState<TopicResource[]>(resources);
-
-  useEffect(() => {
-    setLocalResources([...resources].sort((a, b) => a.priority - b.priority));
-  }, [resources]);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
-
-  async function handleToggle(resource: TopicResource) {
-    const updated = { ...resource, is_selected: !resource.is_selected };
-    updateResourceStore(updated);
-    await fetch(
-      `http://localhost:8000/presentations/${presentationId}/resources/${resource.id}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ is_selected: updated.is_selected }),
-      },
-    );
-  }
-
-  async function handleDelete(resourceId: string) {
-    removeResourceStore(resourceId);
-    setLocalResources((prev) => prev.filter((r) => r.id !== resourceId));
-    await fetch(
-      `http://localhost:8000/presentations/${presentationId}/resources/${resourceId}`,
-      { method: "DELETE" },
-    );
-  }
-
-  async function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIdx = localResources.findIndex((r) => r.id === active.id);
-    const newIdx = localResources.findIndex((r) => r.id === over.id);
-    const reordered = arrayMove(localResources, oldIdx, newIdx);
-    setLocalResources(reordered);
-    // PATCH priorities
-    await Promise.all(
-      reordered.map((r, i) =>
-        fetch(`http://localhost:8000/presentations/${presentationId}/resources/${r.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ priority: i }),
-        }),
-      ),
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div style={{ marginTop: 12 }}>
-        <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 6 }}>Fetching resources…</div>
-        {[0, 1, 2].map((i) => (
-          <div
-            key={i}
-            style={{
-              height: 40,
-              borderRadius: 4,
-              marginBottom: 6,
-              background: "linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%)",
-              backgroundSize: "200% 100%",
-              animation: "_shimmer 1.4s infinite",
-            }}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  if (resourcesInitialized && localResources.length === 0) {
-    return (
-      <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 12, color: "#9ca3af" }}>No resources found.</span>
-        <button
-          onClick={onRetryFetch}
-          style={{
-            fontSize: 11,
-            background: "none",
-            border: "1px solid #d1d5db",
-            borderRadius: 4,
-            padding: "2px 8px",
-            cursor: "pointer",
-            color: "#6b7280",
-          }}
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-
+function ResourcesSection({ resources, isLoading, onCollapse, onRetry }: ResourcesSectionProps) {
+  const visible = resources.slice(0, 8);
   return (
-    <div style={{ marginTop: 12 }}>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={localResources.map((r) => r.id)} strategy={verticalListSortingStrategy}>
-          {localResources.map((resource) => (
-            <SortableResourceRow
-              key={resource.id}
-              resource={resource}
-              onToggle={handleToggle}
-              onDelete={handleDelete}
-            />
-          ))}
-        </SortableContext>
-      </DndContext>
+    <div
+      style={{
+        maxHeight: 220,
+        overflowY: "auto",
+        border: "1px solid #e5e7eb",
+        borderRadius: 8,
+        marginTop: 8,
+        background: "#fafafa",
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "6px 12px",
+          borderBottom: "1px solid #f3f4f6",
+          position: "sticky",
+          top: 0,
+          background: "#fafafa",
+        }}
+      >
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
+          Resources ({resources.length})
+        </span>
+        <span
+          onClick={onCollapse}
+          style={{ fontSize: 12, color: "#16a34a", cursor: "pointer", fontWeight: 500 }}
+        >
+          ↑ Collapse
+        </span>
+      </div>
+
+      {/* Loading: shimmer rows */}
+      {isLoading && [0, 1, 2].map((i) => (
+        <div
+          key={i}
+          style={{
+            height: 32,
+            margin: "4px 12px",
+            borderRadius: 4,
+            background: "linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%)",
+            backgroundSize: "200% 100%",
+            animation: "_shimmer 1.4s infinite",
+          }}
+        />
+      ))}
+
+      {/* Empty state */}
+      {!isLoading && resources.length === 0 && (
+        <div style={{ textAlign: "center", padding: "20px 12px" }}>
+          <div style={{ fontSize: 13, color: "#9ca3af", marginBottom: 6 }}>No resources found</div>
+          <span
+            onClick={onRetry}
+            style={{ fontSize: 13, color: "#16a34a", cursor: "pointer", fontWeight: 500 }}
+          >
+            Retry
+          </span>
+        </div>
+      )}
+
+      {/* Resource rows */}
+      {!isLoading && visible.length > 0 && visible.map((r, idx) => (
+        <CompactResourceRow key={r.id} resource={r} isLast={idx === visible.length - 1} />
+      ))}
     </div>
   );
 }
@@ -318,13 +205,29 @@ function TopicCard({
   index,
   resources,
   isLoadingResources,
-  resourcesInitialized,
   onRetryFetch,
-  presentationId,
-  versionId,
 }: TopicCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: topic.id });
+
+  const [isResourcesOpen, setIsResourcesOpen] = useState(false);
+  const [hasFetchedResources, setHasFetchedResources] = useState(false);
+  const [isNoteExpanded, setIsNoteExpanded] = useState(false);
+  const [rationaleOverflows, setRationaleOverflows] = useState(false);
+  const rationaleRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    const el = rationaleRef.current;
+    if (el) setRationaleOverflows(el.scrollHeight > el.clientHeight + 1);
+  }, [topic.rationale]);
+
+  function handleOpenResources() {
+    setIsResourcesOpen(true);
+    if (!hasFetchedResources && resources.length === 0 && !isLoadingResources) {
+      onRetryFetch();
+      setHasFetchedResources(true);
+    }
+  }
 
   const cardStyle: React.CSSProperties = {
     background: "#ffffff",
@@ -375,18 +278,42 @@ function TopicCard({
               </strong>
             </div>
             {topic.rationale && (
-              <p style={{
-                margin: "4px 0 0",
-                fontSize: 13,
-                color: "#6b7280",
-                lineHeight: 1.4,
-                display: "-webkit-box",
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
-              }}>
-                {topic.rationale}
-              </p>
+              <>
+                <p
+                  ref={rationaleRef}
+                  style={{
+                    margin: "4px 0 0",
+                    fontSize: 13,
+                    color: "#6b7280",
+                    lineHeight: 1.4,
+                    ...(isNoteExpanded
+                      ? {}
+                      : {
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                        }),
+                  }}
+                >
+                  {topic.rationale}
+                </p>
+                {rationaleOverflows && (
+                  <span
+                    onClick={() => setIsNoteExpanded((v) => !v)}
+                    style={{
+                      fontSize: 13,
+                      color: "#16a34a",
+                      cursor: "pointer",
+                      fontWeight: 500,
+                      display: "inline-block",
+                      marginTop: 2,
+                    }}
+                  >
+                    {isNoteExpanded ? "less" : "... more"}
+                  </span>
+                )}
+              </>
             )}
           </div>
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
@@ -421,16 +348,31 @@ function TopicCard({
           </div>
         </div>
 
-        {/* Resources section */}
-        <ResourcesSection
-          topicId={topic.id}
-          resources={resources}
-          isLoading={isLoadingResources}
-          onRetryFetch={onRetryFetch}
-          presentationId={presentationId}
-          versionId={versionId}
-          resourcesInitialized={resourcesInitialized}
-        />
+        {/* Resources toggle / panel */}
+        {isResourcesOpen ? (
+          <ResourcesSection
+            resources={resources}
+            isLoading={isLoadingResources}
+            onCollapse={() => setIsResourcesOpen(false)}
+            onRetry={() => {
+              onRetryFetch();
+              setHasFetchedResources(true);
+            }}
+          />
+        ) : (
+          <div
+            onClick={handleOpenResources}
+            style={{
+              fontSize: 13,
+              color: "#16a34a",
+              cursor: "pointer",
+              fontWeight: 500,
+              marginTop: 8,
+            }}
+          >
+            📎 View resources →
+          </div>
+        )}
       </div>
     </div>
   );

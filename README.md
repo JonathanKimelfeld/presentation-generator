@@ -1,44 +1,43 @@
 # Presentation Generator
 
-An AI-powered presentation generator that turns a topic into a fully structured, editable, versioned presentation. Built for two use cases: a **teacher or presenter** who needs concise, bullet-driven slides they can present to an audience, and a **self-directed learner** who wants full prose explanations, analogies, and speaker notes they can read at their own pace. One `content_mode` toggle switches between them — the same pipeline, the same outline, two completely different content shapes.
+An AI-powered presentation generator that turns a topic into a fully structured, editable, versioned presentation. 
+It's built for two use cases, or two distinct types of users: 
+A: a **teacher or presenter** who needs concise, bullet-driven slides they can present to an audience;
+B: a **self-directed learner** who wants full prose explanations, analogies, and speaker notes they can read at their own pace (or read out to them);
+One `content_mode` toggle switches between them — the same pipeline but different content generation outcomes
 
----
 
 ## What it does
 
 1. You enter a topic (and optionally: audience, tone, depth, length, style, content mode)
-2. The AI generates a weighted outline — topics ranked by importance, with slide counts, time estimates, and confidence scores
+2. The AI generates a weighted outline: topics ranked by importance, with slide counts, time estimates, and confidence scores
 3. Resources (videos, papers, courses, articles) are fetched from Tavily before slides are generated, so the LLM can cite real sources inline
 4. You review, reorder, and refine the outline before committing
 5. Slides are generated with layout variety (narrative, mixed, bullets, visual, embed, quote, two-col, title) and inline source references `[N]`
 6. Every edit — inline, AI patch, or full regen — is saved as an immutable version you can undo and redo
-7. Present the deck in a full-screen viewer, or download as PPTX
+7. Present the deck in a full-screen viewer, or download as PPTX if you want to save it locally
 
 ---
 
 ## Tech stack
 
-| Layer | Technology |
-|---|---|
-| Backend | Python, FastAPI, SQLAlchemy, SQLite |
-| Frontend | React, TypeScript, Vite, Zustand, shadcn/ui, Tailwind CSS |
-| AI | Anthropic Claude (claude-sonnet-4-20250514) |
-| Resources | Tavily Search API |
-| Images | Wikipedia REST API (primary), Tavily (fallback) |
-| Export | python-pptx |
-| Drag & drop | @dnd-kit |
+Backend: Python, FastAPI, SQLAlchemy, SQLite
+Frontend: React, TypeScript, Vite, Zustand, shadcn/ui, Tailwind CSS
+AI: Anthropic Claude + api calling
+Resources: Tavily Search API
+Images: Wikipedia REST API (primary), Tavily (fallback)
+Export: python-pptx
+Drag & drop: @dnd-kit
 
----
 
 ## Prerequisites
 
 - Python 3.11+
 - Node.js 18+
 - pip and npm
-- An [Anthropic API key](https://console.anthropic.com/) — sign up and create a key under API Keys
-- A [Tavily API key](https://tavily.com/) — free tier is sufficient (1,000 searches/month)
+- An [Anthropic API key](https://console.anthropic.com/) 
+- A [Tavily API key](https://tavily.com/) (free tier)
 
----
 
 ## Setup
 
@@ -54,7 +53,7 @@ cd presentation-generator
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -91,7 +90,6 @@ npm run dev
 
 Frontend runs at `http://localhost:5173`.
 
----
 
 ## Quick start
 
@@ -172,24 +170,6 @@ Every change — inline edit, AI patch, reorder, regen — saves an immutable sn
 | `reorder` | Slide drag-and-drop reorder |
 | `outline_refined` | Outline-level AI refinement |
 
-### Presenter
-
-Click **▶ Present** in the editor to open the full-screen viewer.
-
-**Keyboard shortcuts:**
-
-| Key | Action |
-|---|---|
-| `→` or `Space` | Next slide |
-| `←` | Previous slide |
-| `N` | Toggle speaker notes panel |
-| `F` | Toggle fullscreen |
-| `Esc` | Exit presenter |
-
-The top bar shows: topic (left) · current section name (center) · ✕ exit (right).  
-The bottom bar shows: slide counter (left) · progress bar (center) · Notes button (right).  
-The speaker notes panel slides in from the right and shows the full explanation for self-study.
-
 ### Visual slides
 
 If **Include visual slides** is enabled, one image slide is generated per topic. Images are fetched at generation time:
@@ -199,8 +179,6 @@ If **Include visual slides** is enabled, one image slide is generated per topic.
 3. If both fail, the visual slide still renders but shows the description text without an image
 
 Image fetching can fail silently for obscure topics — this is expected behavior, not an error.
-
----
 
 ## Project structure
 
@@ -283,126 +261,3 @@ presentation-generator/
 | `DELETE` | `/presentations/:id/resources/:rid` | Remove a resource |
 | `GET` | `/presentations/:id/slides/:sid/image` | Fetch image URL for a visual slide |
 
----
-
-## Design decisions
-
-### Decision: slides over video
-**What:** The output format is slides (web + PPTX), not generated video.  
-**Why:** Video generation requires a render pipeline (TTS + timing + ffmpeg) that consumes most engineering budget while producing output the user cannot edit. Slides are editable, versionable, and iterative — which serves both use cases better and keeps the feedback loop short.  
-**Tradeoff:** No narration audio; the learner reads rather than watches.  
-**At scale:** TTS per slide (ElevenLabs or OpenAI TTS) could be layered on without changing the slide data model.
-
-### Decision: one pipeline, two content modes
-**What:** A single `content_mode` field on `PresentationConfig` switches between `"verbose"` (self-study) and `"minimal"` (presenting).  
-**Why:** The two use cases — self-directed learner and live presenter — have opposite needs for on-screen density. Building two separate products would duplicate the entire pipeline. Instead, the same outline, the same resources, and the same prompt system produce either full prose narratives or concise bullet lists depending on a single toggle. The LLM prompt uses `content_mode` to force layout choices: `narrative`/`mixed` for verbose, `bullets`/`title` for minimal.  
-**Tradeoff:** A single pipeline can't be optimized separately for each use case's extremes.  
-**At scale:** Additional modes (e.g. `"executive"` for C-suite summaries) add one branch to the prompt without touching the rest of the system.
-
-### Decision: immutable version snapshots
-**What:** Every mutation (edit, patch, regen, reorder) creates a new `Version` row in the database. The presentation stores a `current_version_id` pointer.  
-**Why:** Undo/redo becomes trivial — move the pointer, fetch the snapshot. There is no reconstruction logic, no conflict resolution, no diff application. The tradeoff is storage: each version stores the full slides JSON blob.  
-**Tradeoff:** Storage grows linearly with edit frequency.  
-**At scale:** Replace full snapshots with RFC 6902 JSON Patch deltas; reconstruct any version by replaying patches forward from the base.
-
-### Decision: surgical patch as the default edit path
-**What:** Slide edits are sent to the LLM as a list of target slide IDs plus an instruction. Only those slides are rewritten.  
-**Why:** Sending the full presentation on every edit is expensive (more tokens, higher latency) and unpredictable (the LLM may rewrite slides the user didn't ask to change). Surgical patches are fast, cheap, and scoped. Full regen is always available but requires explicit confirmation.  
-**Tradeoff:** A patch instruction that implicitly requires structural changes (e.g. "add a new slide before slide 3") may fail or require regen.  
-**At scale:** No change — patch cost scales with selected slides, not presentation size.
-
-### Decision: fractional index strings for slide order
-**What:** Slide position is stored as a short lexicographic string (e.g. `aa`, `aba`, `ac`) rather than an integer sequence number.  
-**Why:** Integer sequences require renumbering all slides after any insertion, which means N writes per reorder. Fractional index strings allow insertion between any two slides with a single write: inserting between `aa` and `ac` produces `ab`. Rebalancing only triggers when strings grow beyond ~20 characters — in normal use, never.  
-**Tradeoff:** Strings are less human-readable in the database than integers.  
-**At scale:** No change — this pattern is already used in production tools (Linear, Figma). The rebalancing logic is O(n) and amortized rare.
-
-### Decision: dedicated `/refine-outline` endpoint
-**What:** Outline changes use a purpose-built endpoint with its own prompt, separate from `/patch`.  
-**Why:** Early tests routing outline changes through `/patch` with empty `target_slide_ids` caused the LLM to escalate to full regen every time — the prompt had no surgical target and defaulted to "rewrite everything." A dedicated prompt that shows only the outline JSON and the user instruction produces clean, scoped outline edits every time.  
-**Tradeoff:** One more endpoint to maintain.  
-**At scale:** No change — the separation makes the intent explicit and keeps prompts focused.
-
-### Decision: resources fetched before slide generation
-**What:** Tavily resources are fetched and stored in the database before the slide-generation LLM call, and passed into the slides prompt.  
-**Why:** If resources are fetched after slides, the LLM generates content without knowing what sources exist, and source references have to be retrofitted (or faked). Fetching first means the LLM receives real resource titles, URLs, and descriptions and can write `[N]` inline citations that reference actual content the user can click.  
-**Tradeoff:** Generation is sequential (outline → resources → slides), adding ~5–10 seconds. Parallelizing outline and resource fetch requires pre-generating IDs before the DB row exists — which we do (UUIDs generated before the INSERT).  
-**At scale:** Resource fetching is already I/O-bound and suitable for async. Move to `asyncio.gather` or a worker queue with no model changes.
-
-### Decision: confidence scoring with known weakness
-**What:** Each topic and slide carries a confidence score (0.0–1.0) and flags explaining uncertainty.  
-**Why:** The score gives users a signal about where to verify content manually — obscure topics, ambiguous scope, or weak time estimates get lower scores and explanatory flags. This is especially useful for self-study use cases where the user may not know what they don't know.  
-**Tradeoff:** The score is self-reported — the same model that generates the content also assigns the confidence. This is a known weakness: the model can be confidently wrong. A critic agent (a second LLM call that independently evaluates the output) would make scores more reliable, but doubles generation cost.  
-**At scale:** Add a critic agent pass as an optional post-generation step, gated behind a config flag.
-
-### Scalability seams
-
-The current architecture is intentionally simple. Each seam below is one well-defined change:
-
-| Current | At scale | Why |
-|---|---|---|
-| SQLite | PostgreSQL | SQLite doesn't support concurrent writes; Postgres adds connection pooling and row-level locking |
-| Synchronous LLM calls | Celery + Redis job queue | Current architecture holds the HTTP connection open for 45–90 seconds; async jobs return immediately with a job ID |
-| Full version snapshots | RFC 6902 JSON Patch deltas | Storage grows linearly with edits; deltas compress this to near-zero for small changes |
-| JSON blob for slides | Normalized `slides` table rows | Blob makes per-slide queries expensive; rows enable efficient filtering and analytics |
-| Local disk (SQLite file) | S3 + StorageBackend abstraction | Single-server assumption; S3 makes DB portable across instances |
-| Single user | `workspace_id` multi-tenancy | Add `workspace_id` FK to all tables + JWT auth middleware; no data model redesign needed |
-
----
-
-## Known limitations
-
-- **Confidence scores are self-reported** — the same model that generates content also scores its own confidence. A separate critic agent pass would make scores more reliable. This is the most significant architectural gap.
-- **LLM calls are synchronous** — generation holds the HTTP connection open for 45–90 seconds. At scale, these become Celery tasks with WebSocket progress notifications.
-- **Full snapshots per version** — storage grows linearly with edit frequency. RFC 6902 delta patches are the right fix at scale.
-- **No authentication** — the app is single-user. Adding `workspace_id` to all tables plus JWT middleware is the path to multi-tenancy.
-- **No PDF export** — PPTX export is implemented; PDF requires a headless browser (Playwright) or LibreOffice conversion.
-- **Image fetching can fail silently** — Wikipedia and Tavily are not guaranteed to return a relevant image for every topic. Visual slides degrade gracefully (description text shown instead) but the image may simply not appear for obscure topics.
-- **LLM quality depends on topic popularity** — well-documented topics (central limit theorem, Roman Empire) produce high-confidence, detailed content. Obscure or niche topics may produce lower-quality slides with lower confidence scores. This is a fundamental LLM limitation, not a prompt issue.
-- **No streaming** — slides for all topics are generated in one LLM call. Streaming topic-by-topic would improve perceived performance.
-
----
-
-## AI tooling
-
-This project was built using AI tools throughout — both as the development environment and as the product itself. Here is an honest account of what helped, what didn't, and what that reveals.
-
-### What was used
-
-- **Claude (claude.ai chat)** — used for planning the full 10-phase build sequence before writing any code: what to build in what order, what to defer, where the hard design decisions were. This produced a phase-by-phase spec that became the scaffolding for all implementation.
-- **Claude Code (CLI)** — used for all implementation phases. Each phase was handed a detailed prompt spec; Claude Code wrote the code, diagnosed environment errors, and iterated on failures.
-- **Anthropic API (Claude Sonnet)** — the model powering the app itself: outline generation, slide generation, patch, regen, and refine-outline calls.
-- **Tavily Search API** — resource discovery per topic (videos, papers, courses, articles) and image search fallback.
-- **Wikipedia REST API** — primary image source for visual slides (no API key required, no rate limits for this volume).
-
-### Where AI helped
-
-- **Build planning** — generating a sequenced, dependency-aware 10-phase plan in a single session saved several hours of upfront design thinking
-- **Boilerplate at speed** — FastAPI router scaffolding, SQLAlchemy model definitions, Pydantic schema design, Zustand slice setup: all generated in seconds and correct on first pass
-- **Prompt engineering** — iterating on the slides prompt (content mode rules, source ref format, layout shapes, visual slide rules) was done collaboratively; Claude suggested the `content_mode` layout-forcing approach
-- **Environment debugging** — diagnosing the `NODE_ENV=production` issue that caused npm to silently skip devDependencies took one diagnostic step with Claude Code rather than extended manual investigation
-- **shadcn/ui integration** — the warm oklch palette, typography scale, and component wiring across three route files were written by Claude Code from a design spec in a single pass
-
-### Where AI didn't help (the honest version)
-
-- **Vague prompts produced vague code** — every phase that produced good output required a precise, detailed spec. Prompts like "build the editor" returned generic implementations. The engineering work shifted from coding to prompt specification — still real work.
-- **Product decisions required human judgment** — which features to build, what to cut, what the two use cases actually need, how verbose mode and minimal mode differ in practice: these were human calls. The AI executed well but could not make these choices.
-- **Output verification was required at every phase** — Claude Code cannot validate that generated code works correctly at the system level. Each phase required human checkpoint: run the app, test the flow, read the diff carefully. Two subtle bugs were introduced by the AI (a missing `include=dev` flag that silently dropped devDependencies; an incorrect version spec in package.json) and required careful reading to find.
-- **The AI did not understand the codebase as a whole** — within a session it had strong context; across sessions or when context was compressed, it needed to re-read files before making changes. This is a real limitation for long-running multi-session projects.
-
-### The meta-observation
-
-The AI tooling story is itself a demonstration of the product's thesis: AI works best as a collaborative tool with human judgment at each step, not as a replacement for thinking. The presentation generator uses the same pattern — AI produces a structured draft, the human reviews, refines, and approves before committing.
-
----
-
-## What I'd add with more time
-
-- **Critic agent** — a second LLM pass that independently evaluates the generated content and produces more reliable confidence scores
-- **Async generation** — Celery + Redis job queue with WebSocket progress notifications, so the UI doesn't hold a connection open
-- **Streaming slides** — generate and display topics one at a time as they complete, rather than waiting for the full batch
-- **TTS audio per slide** — ElevenLabs or OpenAI TTS to add narration for self-study mode
-- **PDF export** — Playwright headless browser rendering of the presenter view to PDF
-- **Delta versioning** — RFC 6902 JSON Patch deltas to replace full snapshots
-- **Auth + multi-tenancy** — JWT middleware + `workspace_id` FK on all tables
-- **Art style selector** — minimal / corporate / academic / playful visual themes

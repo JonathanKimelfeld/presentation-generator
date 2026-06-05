@@ -6,3 +6,5 @@ python-dotenv
 httpx
 anthropic
 python-pptx
+tavily-python
+requests

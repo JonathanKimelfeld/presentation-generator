@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Slide, Outline } from "../types";
 
-const API = "http://localhost:8000";
+import { API_BASE as API } from "../config";
 
 // ── Inline ref renderer (plain superscripts — no tooltip in present mode) ─────
 

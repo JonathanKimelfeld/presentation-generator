@@ -4,16 +4,17 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models.presentation import Presentation
 from models.version import Version
-from schemas.presentation import PresentationCreate, PresentationConfig
+from schemas.presentation import PresentationCreate, PresentationConfig, ValidateIntentRequest
 from schemas.version import VersionResponse
 from schemas.slide import SlidePatch
-from llm.calls import generate_outline, generate_slides
+from llm.calls import generate_outline, generate_slides, normalize_topic, validate_intent
 from llm.client import LLMError
 from resources.fetcher import fetch_all_topic_resources
 
@@ -79,6 +80,18 @@ def _format_resources_for_llm(resources_by_topic_orm: dict) -> dict:
             for i, r in enumerate(resources[:8])
         ]
     return formatted
+
+
+class NormalizeTopicRequest(BaseModel):
+    topic: str
+
+
+@router.post("/normalize-topic")
+def normalize_topic_endpoint(body: NormalizeTopicRequest):
+    try:
+        return normalize_topic(body.topic)
+    except LLMError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("")
@@ -223,3 +236,48 @@ def patch_slide(presentation_id: str, slide_id: str, body: SlidePatch, db: Sessi
     db.refresh(new_version)
 
     return _version_to_response(new_version)
+
+
+@router.post("/{presentation_id}/validate-intent")
+def validate_intent_endpoint(
+    presentation_id: str,
+    body: ValidateIntentRequest,
+    db: Session = Depends(get_db),
+):
+    pres = db.query(Presentation).filter(Presentation.id == presentation_id).first()
+    if not pres:
+        raise HTTPException(status_code=404, detail="Presentation not found")
+
+    current = db.query(Version).filter(Version.id == pres.current_version_id).first()
+    if not current:
+        raise HTTPException(status_code=404, detail="Current version not found")
+
+    all_slides = current.slides or []
+    if body.target_slide_ids:
+        slide_context = [s for s in all_slides if s["id"] in body.target_slide_ids]
+    else:
+        slide_context = all_slides[:3]
+
+    minimal_context = [
+        {
+            "id": s["id"],
+            "title": s.get("title", ""),
+            "layout": s.get("layout", ""),
+        }
+        for s in slide_context
+    ]
+
+    config = current.config or {}
+
+    try:
+        result = validate_intent(
+            user_prompt=body.prompt,
+            presentation_topic=pres.topic,
+            slide_context=minimal_context,
+            mode=body.mode,
+            config=config,
+            context=f"validate:{presentation_id}",
+        )
+        return result
+    except LLMError as e:
+        raise HTTPException(status_code=500, detail=str(e))

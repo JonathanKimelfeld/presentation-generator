@@ -13,7 +13,7 @@ from models.version import Version
 from schemas.presentation import PresentationConfig
 from schemas.version import VersionResponse, VersionSummary, PatchRequest, RegenRequest, RefineOutlineRequest
 from schemas.domain import Slide as DomainSlide
-from llm.calls import generate_outline, generate_slides, patch_slides, refine_outline, RegenRequiredError
+from llm.calls import generate_outline, generate_slides, patch_slides, refine_outline, validate_intent, RegenRequiredError
 from llm.client import LLMError
 from resources.fetcher import fetch_all_topic_resources
 
@@ -141,6 +141,29 @@ def patch_version(presentation_id: str, body: PatchRequest, db: Session = Depend
     ]
     if not targeted:
         raise HTTPException(status_code=400, detail="No matching slide ids in current version")
+
+    # Validate intent before patching
+    try:
+        slide_context = [
+            {"id": s["id"], "title": s.get("title", ""), "layout": s.get("layout", "")}
+            for s in current.slides
+            if s["id"] in body.target_slide_ids
+        ]
+        validation = validate_intent(
+            user_prompt=body.prompt,
+            presentation_topic=pres.topic,
+            slide_context=slide_context,
+            mode="patch",
+            config=current.config or {},
+            context=f"patch:{presentation_id}",
+        )
+        if validation["action"] == "reject":
+            return JSONResponse(
+                status_code=400,
+                content={"error": "intent_rejected", "detail": validation["reason"]},
+            )
+    except Exception:
+        pass  # validation failure must never block the patch
 
     try:
         patch_entries = patch_slides(targeted, body.prompt, config)

@@ -1,6 +1,10 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+import os
+from logger import setup_logging
+setup_logging()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -38,4 +42,10 @@ def on_startup():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "model": os.getenv("MODEL", "claude-sonnet-4-20250514"),
+        "anthropic_configured": bool(os.getenv("ANTHROPIC_API_KEY")),
+        "tavily_configured": bool(os.getenv("TAVILY_API_KEY")),
+        "database": "sqlite",
+    }

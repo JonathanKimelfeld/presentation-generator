@@ -37,3 +37,9 @@ class PresentationResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ValidateIntentRequest(BaseModel):
+    prompt: str
+    target_slide_ids: list[str] = []
+    mode: Literal["patch", "general", "regen"] = "general"

@@ -12,7 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
-const API = "http://localhost:8000";
+import { API_BASE as API } from "../config";
 
 function confidenceColor(score: number): string {
   if (score >= 0.9) return "#16a34a";
@@ -543,6 +543,303 @@ function SlideEditor({ slide, topicResources, onSave, onCancel, isSaving, presen
   );
 }
 
+// ─── Guardrail types ─────────────────────────────────────────────────────────
+
+type ToastVariant = "default" | "warning" | "info";
+
+type ValidationState = {
+  action: "proceed" | "reframe" | "reject";
+  reframed_prompt: string | null;
+  reason: string | null;
+  confidence: number;
+};
+
+// ─── ChatBar ──────────────────────────────────────────────────────────────────
+
+interface ChatBarProps {
+  presentationId: string;
+  onExecutePatch: (targetIds: string[], prompt: string) => Promise<void>;
+  onRegen: () => void;
+  showToast: (msg: string, variant?: ToastVariant) => void;
+}
+
+function ChatBar({ presentationId, onExecutePatch, onRegen, showToast }: ChatBarProps) {
+  const {
+    selectedSlideIds,
+    chatInput,
+    setChatInput,
+    clearSlideSelection,
+    isGenerating,
+  } = useStore();
+
+  const [validationState, setValidationState] = useState<ValidationState | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
+  const [tooltipVisible, setTooltipVisible] = useState(false);
+
+  async function runPatch(prompt: string, targetIds: string[]) {
+    const isGeneral = targetIds.length === 0;
+    if (isGeneral) setIsApplying(true);
+    try {
+      await onExecutePatch(targetIds, prompt);
+    } finally {
+      setIsApplying(false);
+    }
+    setValidationState(null);
+    setChatInput("");
+    clearSlideSelection();
+  }
+
+  async function handleSend() {
+    if (!chatInput.trim() || isGenerating || isValidating) return;
+
+    setValidationState(null);
+    const mode = selectedSlideIds.length > 0 ? "patch" : "general";
+
+    const slowTimer = setTimeout(
+      () => showToast("Taking a moment to check…", "info"),
+      3000,
+    );
+
+    setIsValidating(true);
+    try {
+      const res = await fetch(
+        `${API}/presentations/${presentationId}/validate-intent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: chatInput,
+            target_slide_ids: selectedSlideIds,
+            mode,
+          }),
+        },
+      );
+
+      clearTimeout(slowTimer);
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const result: ValidationState = await res.json();
+
+      if (result.action === "proceed") {
+        if (result.confidence < 0.6) {
+          showToast("Applied with low confidence — review the changes", "info");
+        }
+        await runPatch(chatInput, selectedSlideIds);
+      } else {
+        setValidationState(result);
+      }
+    } catch {
+      clearTimeout(slowTimer);
+      showToast("Couldn't validate input — proceeding anyway", "warning");
+      await runPatch(chatInput, selectedSlideIds);
+    } finally {
+      setIsValidating(false);
+    }
+  }
+
+  const isBusy = isGenerating || isValidating;
+  const canSend = !isBusy && chatInput.trim().length > 0;
+  const isReframing = validationState?.action === "reframe";
+  const isRejecting = validationState?.action === "reject";
+
+  return (
+    <div
+      className="border-t border-border bg-background"
+      style={{ flexShrink: 0, boxShadow: "0 -2px 8px rgba(0,0,0,0.04)" }}
+    >
+      {/* Reframe banner */}
+      {isReframing && (
+        <div
+          style={{
+            background: "#fefce8",
+            borderTop: "1px solid #fde68a",
+            borderBottom: "1px solid var(--border)",
+            padding: "12px 16px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <span style={{ fontSize: 16, flexShrink: 0, lineHeight: 1.4 }}>💡</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: "#92400e", marginBottom: 3 }}>
+                Reframed: {validationState!.reframed_prompt}
+              </div>
+              {validationState!.reason && (
+                <div style={{ fontSize: 12, color: "#78350f", marginBottom: 8 }}>
+                  {validationState!.reason}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8 }}>
+                <Button
+                  size="sm"
+                  onClick={() => runPatch(validationState!.reframed_prompt!, selectedSlideIds)}
+                  disabled={isGenerating}
+                >
+                  Use reframed version
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => runPatch(chatInput, selectedSlideIds)}
+                  disabled={isGenerating}
+                >
+                  Keep original
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject banner */}
+      {isRejecting && (
+        <div
+          style={{
+            background: "#fef2f2",
+            borderTop: "1px solid #fecaca",
+            borderBottom: "1px solid var(--border)",
+            padding: "12px 16px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <span style={{ fontSize: 16, flexShrink: 0, lineHeight: 1.4 }}>⚠</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: "#991b1b", marginBottom: 3 }}>
+                Can't apply this change
+              </div>
+              {validationState!.reason && (
+                <div style={{ fontSize: 12, color: "#7f1d1d", marginBottom: 8 }}>
+                  {validationState!.reason}
+                </div>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setValidationState(null)}
+              >
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Input row */}
+      <div className="px-4 flex items-center gap-2" style={{ height: 68 }}>
+        <div style={{ position: "relative", flex: 1 }}>
+          <Input
+            type="text"
+            placeholder={
+              isValidating
+                ? "Checking…"
+                : selectedSlideIds.length > 0
+                ? `Describe changes for the ${selectedSlideIds.length} selected slide${selectedSlideIds.length === 1 ? "" : "s"}…`
+                : "Ask anything about this presentation…"
+            }
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && canSend) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            disabled={isValidating}
+            className="w-full"
+            style={isValidating ? { paddingRight: 36 } : undefined}
+          />
+          {isValidating && (
+            <span
+              style={{
+                position: "absolute",
+                right: 10,
+                top: "50%",
+                transform: "translateY(-50%)",
+                width: 14,
+                height: 14,
+                border: "2px solid rgba(0,0,0,0.15)",
+                borderTopColor: "#6b7280",
+                borderRadius: "50%",
+                display: "inline-block",
+                animation: "_editor-spin 0.7s linear infinite",
+                pointerEvents: "none",
+              }}
+            />
+          )}
+        </div>
+
+        {/* General apply (no slides selected, no reframe banner) */}
+        {!isReframing && selectedSlideIds.length === 0 && (
+          <div
+            className="relative"
+            onMouseEnter={() => setTooltipVisible(true)}
+            onMouseLeave={() => setTooltipVisible(false)}
+          >
+            {tooltipVisible && (
+              <div
+                className="absolute bottom-full right-0 mb-1.5 text-small rounded-md px-3 py-2 z-10 w-72"
+                style={{
+                  background: "#1f2937",
+                  color: "#fff",
+                  lineHeight: 1.5,
+                  pointerEvents: "none",
+                }}
+              >
+                Select slides in the left panel to patch specific slides, or use "Apply to presentation" for general changes
+              </div>
+            )}
+            <Button
+              onClick={handleSend}
+              disabled={!canSend}
+              className="whitespace-nowrap"
+            >
+              {isApplying && !isValidating && (
+                <span
+                  style={{
+                    width: 13,
+                    height: 13,
+                    border: "2px solid rgba(255,255,255,0.35)",
+                    borderTopColor: "#fff",
+                    borderRadius: "50%",
+                    display: "inline-block",
+                    animation: "_editor-spin 0.7s linear infinite",
+                    flexShrink: 0,
+                    marginRight: 6,
+                  }}
+                />
+              )}
+              {isValidating ? "Checking…" : isApplying ? "Applying…" : "Apply to presentation"}
+            </Button>
+          </div>
+        )}
+
+        {/* Targeted patch (slides selected, no reframe banner) */}
+        {!isReframing && selectedSlideIds.length > 0 && (
+          <Button
+            onClick={handleSend}
+            disabled={!canSend}
+            className="bg-primary hover:bg-primary/90 text-primary-foreground whitespace-nowrap"
+          >
+            {isValidating
+              ? "Checking…"
+              : `Patch ${selectedSlideIds.length} slide${selectedSlideIds.length === 1 ? "" : "s"}`}
+          </Button>
+        )}
+
+        <Button
+          variant="outline"
+          onClick={onRegen}
+          disabled={isBusy}
+          className="text-orange-600 border-orange-200 hover:bg-orange-50 whitespace-nowrap"
+        >
+          Regenerate
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ─── EditorView ───────────────────────────────────────────────────────────────
 
 export default function EditorView() {
@@ -574,12 +871,10 @@ export default function EditorView() {
   const [versionSummaries, setVersionSummaries] = useState<VersionSummary[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [patchTooltipVisible, setPatchTooltipVisible] = useState(false);
-  const [applyingGeneral, setApplyingGeneral] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; variant: ToastVariant } | null>(null);
 
-  const showToast = (msg: string) => {
-    setToast(msg);
+  const showToast = (msg: string, variant: ToastVariant = "default") => {
+    setToast({ msg, variant });
     setTimeout(() => setToast(null), 4000);
   };
 
@@ -633,30 +928,26 @@ export default function EditorView() {
     }
   }
 
-  const handlePatch = async (targetIds: string[]) => {
-    if (!id || !chatInput.trim()) return;
-    const isGeneral = targetIds.length === 0;
-    if (isGeneral) setApplyingGeneral(true);
+  const handlePatch = async (targetIds: string[], promptOverride?: string) => {
+    const promptToUse = promptOverride ?? chatInput;
+    if (!id || !promptToUse.trim()) return;
     setGenerating(true);
     try {
       const res = await fetch(`${API}/presentations/${id}/patch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: chatInput, target_slide_ids: targetIds }),
+        body: JSON.stringify({ prompt: promptToUse, target_slide_ids: targetIds }),
       });
       if (res.status === 409) {
-        // Backend says regen required — fall through to regen
         await handleRegen();
         return;
       }
       const newVersion = await res.json();
       pushVersion(newVersion);
-      setChatInput("");
     } catch {
       showToast("Patch failed. Try again.");
     } finally {
       setGenerating(false);
-      setApplyingGeneral(false);
     }
   };
 
@@ -701,14 +992,23 @@ export default function EditorView() {
       {/* Toast banner */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
-          <Card className="border-l-4 border-l-destructive shadow-lg px-4 py-3 flex items-center gap-3">
+          <Card
+            className={cn(
+              "shadow-lg px-4 py-3 flex items-center gap-3 border-l-4",
+              toast.variant === "warning"
+                ? "border-l-yellow-500"
+                : toast.variant === "info"
+                ? "border-l-blue-400"
+                : "border-l-destructive",
+            )}
+          >
             <span
               style={{ cursor: "pointer", color: "var(--muted-foreground)" }}
               onClick={() => setToast(null)}
             >
               ✕
             </span>
-            <span className="text-small">{toast}</span>
+            <span className="text-small">{toast.msg}</span>
           </Card>
         </div>
       )}
@@ -1034,99 +1334,12 @@ export default function EditorView() {
         </SheetContent>
       </Sheet>
 
-      {/* Bottom chat bar */}
-      <div
-        className="border-t border-border px-4 flex items-center gap-2 bg-background"
-        style={{
-          height: 68,
-          flexShrink: 0,
-          boxShadow: "0 -2px 8px rgba(0,0,0,0.04)",
-        }}
-      >
-        <Input
-          type="text"
-          placeholder={
-            selectedSlideIds.length > 0
-              ? `Describe changes for the ${selectedSlideIds.length} selected slide${selectedSlideIds.length === 1 ? "" : "s"}…`
-              : "Ask anything about this presentation…"
-          }
-          value={chatInput}
-          onChange={(e) => setChatInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !isGenerating && chatInput.trim()) {
-              e.preventDefault();
-              selectedSlideIds.length > 0 ? handlePatch(selectedSlideIds) : handlePatch([]);
-            }
-          }}
-          className="flex-1"
-        />
-
-        {/* Mode 1: General query (no slides selected) */}
-        {selectedSlideIds.length === 0 && (
-          <div
-            className="relative"
-            onMouseEnter={() => setPatchTooltipVisible(true)}
-            onMouseLeave={() => setPatchTooltipVisible(false)}
-          >
-            {patchTooltipVisible && (
-              <div
-                className="absolute bottom-full right-0 mb-1.5 text-small rounded-md px-3 py-2 z-10 w-72"
-                style={{
-                  background: "#1f2937",
-                  color: "#fff",
-                  lineHeight: 1.5,
-                  pointerEvents: "none",
-                }}
-              >
-                Select slides in the left panel to patch specific slides, or use "Apply to presentation" for general changes
-              </div>
-            )}
-            <Button
-              onClick={() => handlePatch([])}
-              disabled={isGenerating || !chatInput.trim()}
-              className="whitespace-nowrap"
-            >
-              {applyingGeneral && (
-                <span
-                  style={{
-                    width: 13,
-                    height: 13,
-                    border: "2px solid rgba(255,255,255,0.35)",
-                    borderTopColor: "#fff",
-                    borderRadius: "50%",
-                    display: "inline-block",
-                    animation: "_editor-spin 0.7s linear infinite",
-                    flexShrink: 0,
-                    marginRight: 6,
-                  }}
-                />
-              )}
-              {applyingGeneral ? "Applying…" : "Apply to presentation"}
-            </Button>
-          </div>
-        )}
-
-        {/* Mode 2: Targeted patch (slides selected) */}
-        {selectedSlideIds.length > 0 && (
-          <Button
-            onClick={() => handlePatch(selectedSlideIds)}
-            disabled={isGenerating || !chatInput.trim()}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground whitespace-nowrap"
-          >
-            Patch {selectedSlideIds.length} slide{selectedSlideIds.length === 1 ? "" : "s"}
-          </Button>
-        )}
-
-        {/* Mode 3: Regen */}
-        <Button
-          variant="outline"
-          onClick={handleRegen}
-          disabled={isGenerating}
-          className="text-orange-600 border-orange-200 hover:bg-orange-50 whitespace-nowrap"
-        >
-          Regenerate
-        </Button>
-      </div>
+      <ChatBar
+        presentationId={id ?? ""}
+        onExecutePatch={handlePatch}
+        onRegen={handleRegen}
+        showToast={showToast}
+      />
     </div>
   );
 }

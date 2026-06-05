@@ -378,3 +378,165 @@ When rewriting slide content, apply the same storytelling rules as the original 
 - Include analogies or concrete examples for abstract concepts
 - Keep the same narrative flow and logical sequence as the surrounding slides"""
     return _JSON_SYSTEM, user
+
+
+def normalize_prompt(topic: str) -> tuple[str, str]:
+    system = """\
+You are a text normalization assistant.
+You return only valid JSON. No prose, no markdown."""
+
+    user = f"""\
+Clean up this presentation topic submitted by a user.
+
+Topic: "{topic}"
+
+Apply these corrections if needed:
+1. Fix spelling and typos
+2. Fix capitalization (title case for proper nouns)
+3. Fix grammar
+4. Remove excessive punctuation or symbols
+5. Expand obvious abbreviations if unambiguous
+
+Do NOT:
+- Change the meaning or intent of the topic
+- Add or remove words that change the scope
+- Translate to another language
+- Make it more formal if it's clearly casual
+- Change names, brands, or technical terms that are intentionally spelled that way
+
+Return this exact JSON:
+{{
+  "normalized": "<cleaned topic>",
+  "changed": <true if anything was changed>,
+  "corrections": "<one sentence describing what was fixed, or null if nothing changed>"
+}}
+
+Examples:
+"quantom computng" →
+  {{"normalized": "Quantum Computing", "changed": true, "corrections": "Fixed spelling: quantom→quantum, computng→computing"}}
+
+"the romn empir" →
+  {{"normalized": "The Roman Empire", "changed": true, "corrections": "Fixed spelling: romn→Roman, empir→Empire"}}
+
+"Machine Learning" →
+  {{"normalized": "Machine Learning", "changed": false, "corrections": null}}
+
+"WW2" →
+  {{"normalized": "World War II", "changed": true, "corrections": "Expanded abbreviation WW2 to World War II"}}"""
+
+    return system, user
+
+
+def validation_prompt(
+    user_prompt: str,
+    presentation_topic: str,
+    slide_context: list[dict],
+    mode: str,
+    config: dict,
+) -> tuple[str, str]:
+    import json as _json
+    system = """\
+You are a strict guardrail classifier for an AI presentation editor. \
+Your job is to evaluate whether a user's instruction is appropriate \
+to apply to a presentation.
+
+You return only valid JSON. No prose, no markdown.
+No explanation outside the JSON structure."""
+
+    content_mode = config.get("content_mode", "verbose")
+    audience = config.get("audience") or "general"
+
+    user = f"""\
+Evaluate this instruction for a presentation editor.
+
+Presentation topic: "{presentation_topic}"
+Content mode: {content_mode}
+Audience: {audience}
+
+Current slide context (sample):
+{_json.dumps(slide_context, indent=2)}
+
+User instruction: "{user_prompt}"
+Instruction type: {mode}
+  (patch = modify specific slides,
+   general = apply to whole presentation,
+   regen = regenerate everything)
+
+Evaluate the instruction against these rules:
+
+## RULE 1 — RELEVANCE
+The instruction must relate to the presentation topic
+or its content. Instructions about completely unrelated
+topics should be rejected.
+
+Relevant examples:
+  Topic: "Chess" → "explain the knight's movement more clearly" ✓
+  Topic: "Chess" → "add a section about openings" ✓
+  Topic: "Chess" → "mention how chess relates to military strategy" ✓ (plausible connection)
+
+Irrelevant examples:
+  Topic: "Chess" → "write me a poem about my cat" ✗
+  Topic: "Chess" → "add a recipe for pasta" ✗
+
+## RULE 2 — FACTUAL INTEGRITY
+The instruction must not ask the LLM to state something
+demonstrably false or misleading.
+
+Reject if the instruction asks to:
+  - State known misinformation as fact
+  - Contradict established scientific consensus
+  - Make false historical claims
+  - Attribute fake quotes to real people
+
+Examples:
+  "say the earth is flat" ✗
+  "claim Einstein failed math" ✗
+  "make it sound like vaccines cause autism" ✗
+
+## RULE 3 — SCOPE APPROPRIATENESS
+The instruction must be something an editor can reasonably do.
+It should relate to content, structure, tone, depth, or presentation style.
+
+Reject if:
+  - Asking to do something outside a slide editor's capabilities
+    (generate images from scratch, play music, etc.)
+  - Completely nonsensical input
+
+## RULE 4 — REFRAME BEFORE REJECTING
+Before rejecting, try to reframe the instruction into something
+relevant and actionable.
+
+Example:
+  User: "make it funnier"
+  Topic: "Quantum Physics"
+  Reframe: "Add accessible analogies and lighten the tone to make complex concepts more engaging"
+  → action: "reframe"
+
+Example:
+  User: "add more about trains"
+  Topic: "The Roman Empire"
+  Reframe: "Add content about Roman transportation infrastructure and road networks"
+  → action: "reframe"
+
+Only reject when reframing is genuinely impossible.
+
+## RULE 5 — TRUST THE USER
+Do not be overly restrictive. The user knows their presentation.
+If there is any reasonable interpretation of the instruction that
+fits the topic, allow it. Err on the side of proceeding.
+
+Return this exact JSON:
+{{
+  "valid": <true if action is proceed or reframe>,
+  "action": "<proceed|reframe|reject>",
+  "reframed_prompt": "<reframed instruction if action is reframe, null otherwise>",
+  "reason": "<explanation for reframe or rejection, null if proceeding>",
+  "confidence": <0.0-1.0, how confident you are in this assessment>
+}}
+
+Action rules:
+  proceed  → instruction is fine as-is, use it directly
+  reframe  → instruction needs adjustment, use reframed_prompt instead
+  reject   → instruction cannot be made relevant or is factually harmful"""
+
+    return system, user

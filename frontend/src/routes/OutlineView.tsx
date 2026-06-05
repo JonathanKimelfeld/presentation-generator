@@ -25,6 +25,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { API_BASE } from "../config";
 
 function confidenceColor(score: number): string {
   if (score >= 0.9) return "#16a34a";
@@ -353,6 +354,13 @@ function TopicCard({
 
 // ─── OutlineChatBar ──────────────────────────────────────────────────────────
 
+type OutlineValidationState = {
+  action: "proceed" | "reframe" | "reject";
+  reframed_prompt: string | null;
+  reason: string | null;
+  confidence: number;
+};
+
 interface OutlineChatBarProps {
   presentationId: string;
   onNewVersion: (v: Version) => void;
@@ -361,6 +369,8 @@ interface OutlineChatBarProps {
 function OutlineChatBar({ presentationId, onNewVersion }: OutlineChatBarProps) {
   const [input, setInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [validationState, setValidationState] = useState<OutlineValidationState | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const pushVersion = useStore((s) => s.pushVersion);
 
@@ -369,29 +379,26 @@ function OutlineChatBar({ presentationId, onNewVersion }: OutlineChatBarProps) {
     setTimeout(() => setToast(null), 3000);
   }
 
-  async function handleSend() {
-    if (!input.trim() || isSubmitting) return;
+  async function executeRefinement(promptToUse: string) {
     setIsSubmitting(true);
-
     try {
       const res = await fetch(
-        `http://localhost:8000/presentations/${presentationId}/refine-outline`,
+        `${API_BASE}/presentations/${presentationId}/refine-outline`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: input }),
+          body: JSON.stringify({ prompt: promptToUse }),
         },
       );
-
       if (!res.ok) {
         showToast("Couldn't refine outline. Try again.", "error");
         return;
       }
-
       const newVersion: Version = await res.json();
       pushVersion(newVersion);
       onNewVersion(newVersion);
       setInput("");
+      setValidationState(null);
       showToast("Outline updated", "success");
     } catch {
       showToast("Couldn't refine outline. Try again.", "error");
@@ -400,7 +407,58 @@ function OutlineChatBar({ presentationId, onNewVersion }: OutlineChatBarProps) {
     }
   }
 
-  const canSend = !isSubmitting && input.trim().length > 0;
+  async function handleSend() {
+    if (!input.trim() || isSubmitting || isValidating) return;
+
+    setValidationState(null);
+
+    const slowTimer = setTimeout(
+      () => showToast("Taking a moment to check…", "success"),
+      3000,
+    );
+
+    setIsValidating(true);
+    try {
+      const res = await fetch(
+        `${API_BASE}/presentations/${presentationId}/validate-intent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: input,
+            target_slide_ids: [],
+            mode: "general",
+          }),
+        },
+      );
+
+      clearTimeout(slowTimer);
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const result: OutlineValidationState = await res.json();
+
+      if (result.action === "proceed") {
+        if (result.confidence < 0.6) {
+          showToast("Applied with low confidence — review the changes", "success");
+        }
+        await executeRefinement(input);
+      } else {
+        setValidationState(result);
+      }
+    } catch {
+      clearTimeout(slowTimer);
+      showToast("Couldn't validate — proceeding anyway", "error");
+      await executeRefinement(input);
+    } finally {
+      setIsValidating(false);
+    }
+  }
+
+  const isBusy = isSubmitting || isValidating;
+  const canSend = !isBusy && input.trim().length > 0;
+  const isReframing = validationState?.action === "reframe";
+  const isRejecting = validationState?.action === "reject";
 
   return (
     <div className="relative">
@@ -417,48 +475,155 @@ function OutlineChatBar({ presentationId, onNewVersion }: OutlineChatBarProps) {
         </div>
       )}
 
+      {/* Reframe banner */}
+      {isReframing && (
+        <div
+          style={{
+            background: "#fefce8",
+            border: "1px solid #fde68a",
+            borderRadius: 8,
+            padding: "12px 14px",
+            marginBottom: 8,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <span style={{ fontSize: 15, flexShrink: 0, lineHeight: 1.4 }}>💡</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: "#92400e", marginBottom: 3 }}>
+                Reframed: {validationState!.reframed_prompt}
+              </div>
+              {validationState!.reason && (
+                <div style={{ fontSize: 12, color: "#78350f", marginBottom: 8 }}>
+                  {validationState!.reason}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8 }}>
+                <Button
+                  size="sm"
+                  onClick={() => executeRefinement(validationState!.reframed_prompt!)}
+                  disabled={isSubmitting}
+                >
+                  Use reframed version
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => executeRefinement(input)}
+                  disabled={isSubmitting}
+                >
+                  Keep original
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject banner */}
+      {isRejecting && (
+        <div
+          style={{
+            background: "#fef2f2",
+            border: "1px solid #fecaca",
+            borderRadius: 8,
+            padding: "12px 14px",
+            marginBottom: 8,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <span style={{ fontSize: 15, flexShrink: 0, lineHeight: 1.4 }}>⚠</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: "#991b1b", marginBottom: 3 }}>
+                Can't apply this change
+              </div>
+              {validationState!.reason && (
+                <div style={{ fontSize: 12, color: "#7f1d1d", marginBottom: 8 }}>
+                  {validationState!.reason}
+                </div>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setValidationState(null)}
+              >
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Card className="p-3">
         <div className="flex gap-2">
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
+          <div style={{ position: "relative", flex: 1 }}>
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && canSend) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder={
+                isValidating
+                  ? "Checking…"
+                  : isSubmitting
+                  ? "Refining outline…"
+                  : "Ask to adjust topics, depth, or structure…"
               }
-            }}
-            placeholder={isSubmitting ? "Refining outline…" : "Ask to adjust topics, depth, or structure…"}
-            disabled={isSubmitting}
-            className="flex-1"
-          />
-          <Button
-            onClick={handleSend}
-            disabled={!canSend}
-            className={cn(
-              "whitespace-nowrap",
-              canSend
-                ? "bg-primary hover:bg-primary/90 text-primary-foreground"
-                : "bg-secondary text-muted-foreground"
-            )}
-          >
-            {isSubmitting && (
+              disabled={isValidating}
+              className="w-full"
+              style={isValidating ? { paddingRight: 36 } : undefined}
+            />
+            {isValidating && (
               <span
                 style={{
-                  width: 14,
-                  height: 14,
+                  position: "absolute",
+                  right: 10,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  width: 13,
+                  height: 13,
                   border: "2px solid rgba(0,0,0,0.15)",
                   borderTopColor: "#6b7280",
                   borderRadius: "50%",
                   display: "inline-block",
                   animation: "_outline-spin 0.7s linear infinite",
-                  flexShrink: 0,
-                  marginRight: 6,
+                  pointerEvents: "none",
                 }}
               />
             )}
-            {isSubmitting ? "Refining…" : "Send"}
-          </Button>
+          </div>
+          {!isReframing && (
+            <Button
+              onClick={handleSend}
+              disabled={!canSend}
+              className={cn(
+                "whitespace-nowrap",
+                canSend
+                  ? "bg-primary hover:bg-primary/90 text-primary-foreground"
+                  : "bg-secondary text-muted-foreground"
+              )}
+            >
+              {isSubmitting && !isValidating && (
+                <span
+                  style={{
+                    width: 14,
+                    height: 14,
+                    border: "2px solid rgba(0,0,0,0.15)",
+                    borderTopColor: "#6b7280",
+                    borderRadius: "50%",
+                    display: "inline-block",
+                    animation: "_outline-spin 0.7s linear infinite",
+                    flexShrink: 0,
+                    marginRight: 6,
+                  }}
+                />
+              )}
+              {isValidating ? "Checking…" : isSubmitting ? "Refining…" : "Send"}
+            </Button>
+          )}
         </div>
       </Card>
     </div>
@@ -496,13 +661,13 @@ export default function OutlineView() {
   useEffect(() => {
     if (!version && routeId) {
       setLoading(true);
-      fetch(`http://localhost:8000/presentations/${routeId}/versions`)
+      fetch(`${API_BASE}/presentations/${routeId}/versions`)
         .then((r) => r.json())
         .then(async (summaries: { id: string }[]) => {
           if (summaries.length === 0) return;
           const last = summaries[summaries.length - 1];
           const res = await fetch(
-            `http://localhost:8000/presentations/${routeId}/versions/${last.id}`,
+            `${API_BASE}/presentations/${routeId}/versions/${last.id}`,
           );
           const fullVersion: Version = await res.json();
           setVersions([fullVersion]);
@@ -516,7 +681,7 @@ export default function OutlineView() {
   useEffect(() => {
     if (!version || !routeId) return;
     setResourcesInitialized(false);
-    fetch(`http://localhost:8000/presentations/${routeId}/resources?version_id=${version.id}`)
+    fetch(`${API_BASE}/presentations/${routeId}/resources?version_id=${version.id}`)
       .then((r) => r.json())
       .then((grouped: Record<string, TopicResource[]>) => {
         setResources(grouped);
@@ -547,7 +712,7 @@ export default function OutlineView() {
     setFetchingTopics((prev) => ({ ...prev, [topicId]: true }));
     try {
       const res = await fetch(
-        `http://localhost:8000/presentations/${presentationId || routeId}/resources/fetch`,
+        `${API_BASE}/presentations/${presentationId || routeId}/resources/fetch`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

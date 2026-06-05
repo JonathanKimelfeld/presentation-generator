@@ -48,3 +48,34 @@ def validate_patch(data: dict) -> list[PatchEntry]:
         return [PatchEntry.model_validate(p) for p in data.get("patches", [])]
     except Exception as e:
         raise LLMValidationError(f"Patch validation failed: {e}", data)
+
+
+def validate_normalization_result(data: dict) -> dict:
+    required = {"normalized", "changed", "corrections"}
+    missing = required - set(data.keys())
+    if missing:
+        raise LLMValidationError(f"Missing required fields: {missing}", data)
+    if not isinstance(data["normalized"], str) or not data["normalized"].strip():
+        raise LLMValidationError("normalized must be a non-empty string", data)
+    data["changed"] = bool(data.get("changed", False))
+    return data
+
+
+def validate_validation_result(data: dict) -> dict:
+    required = {"valid", "action", "reframed_prompt", "reason", "confidence"}
+    missing = required - set(data.keys())
+    if missing:
+        raise LLMValidationError(f"Missing required fields: {missing}", data)
+    if data["action"] not in ("proceed", "reframe", "reject"):
+        raise LLMValidationError(f"Invalid action value: {data['action']!r}", data)
+    try:
+        conf = float(data["confidence"])
+        if not (0.0 <= conf <= 1.0):
+            raise ValueError("out of range")
+        data["confidence"] = conf
+    except (TypeError, ValueError) as e:
+        raise LLMValidationError(
+            f"Invalid confidence: {data['confidence']!r} ({e})", data
+        )
+    data["valid"] = bool(data.get("valid", False))
+    return data

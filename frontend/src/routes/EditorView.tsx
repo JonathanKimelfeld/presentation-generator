@@ -2,6 +2,15 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useStore, currentVersion } from "../store";
 import { Slide, TopicResource, VersionSummary } from "../types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
 
 const API = "http://localhost:8000";
 
@@ -273,10 +282,16 @@ function SlideViewer({ slide, topicResources }: { slide: Slide; topicResources: 
   if (slide.layout === "mixed") return <MixedRenderer content={slide.content} topicResources={topicResources} />;
   if (slide.layout === "visual") return <VisualRenderer content={slide.content} topicResources={topicResources} />;
   if (slide.layout === "bullets") {
+    const subtitle = (slide.content as { subtitle?: string }).subtitle;
     const bullets = (slide.content as { bullets?: string[] }).bullets ?? [];
     const sourceRefs = (slide.content as { source_refs?: number[] }).source_refs ?? [];
     return (
       <div>
+        {subtitle && (
+          <p style={{ fontSize: 14, fontWeight: 600, borderLeft: "3px solid #16a34a", paddingLeft: 10, marginBottom: 12, color: "#374151" }}>
+            {subtitle}
+          </p>
+        )}
         <ul style={{ paddingLeft: 20, margin: 0 }}>
           {bullets.map((b, i) => (
             <li key={i} style={{ marginBottom: 6 }}>
@@ -308,15 +323,48 @@ function SlideViewer({ slide, topicResources }: { slide: Slide; topicResources: 
       </div>
     );
   }
+  if (slide.layout === "embed") {
+    const url = (slide.content as { url?: string }).url ?? "";
+    const caption = (slide.content as { caption?: string }).caption;
+    const isYoutube = url.includes("youtube.com") || url.includes("youtu.be");
+    if (isYoutube) {
+      const videoId = url.includes("youtu.be")
+        ? url.split("youtu.be/")[1]?.split("?")[0]
+        : new URL(url).searchParams.get("v") ?? "";
+      return (
+        <div>
+          <iframe
+            src={`https://www.youtube.com/embed/${videoId}`}
+            width="100%"
+            height="320px"
+            frameBorder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            style={{ borderRadius: 6, display: "block" }}
+          />
+          {caption && <div style={{ fontSize: 13, color: "#6b7280", marginTop: 8, fontStyle: "italic" }}>{caption}</div>}
+        </div>
+      );
+    }
+    return (
+      <div>
+        <a href={url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 15, color: "#2563eb" }}>{url}</a>
+        {caption && <div style={{ fontSize: 13, color: "#6b7280", marginTop: 6, fontStyle: "italic" }}>{caption}</div>}
+      </div>
+    );
+  }
   return <pre style={{ whiteSpace: "pre-wrap", fontSize: 13 }}>{JSON.stringify(slide.content, null, 2)}</pre>;
 }
 
 // ─── Slide editors ────────────────────────────────────────────────────────────
 
 function BulletsEditor({ content, onChange }: { content: Record<string, unknown>; onChange: (c: Record<string, unknown>) => void }) {
+  const subtitle = (content.subtitle as string | undefined) ?? "";
   const bullets = (content.bullets as string[] | undefined) ?? [];
   return (
     <div>
+      <input value={subtitle} onChange={(e) => onChange({ ...content, subtitle: e.target.value })}
+        placeholder="Subtitle" style={{ width: "100%", padding: 8, fontSize: 14, borderRadius: 4, border: "1px solid #e5e7eb", marginBottom: 12, boxSizing: "border-box" }} />
       {bullets.map((bullet, i) => (
         <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <textarea
@@ -479,15 +527,17 @@ function SlideEditor({ slide, topicResources, onSave, onCancel, isSaving, presen
   return (
     <div>
       {editor}
-      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-        <button onClick={() => onSave(content)} disabled={isSaving}
-          style={{ padding: "8px 16px", background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, cursor: isSaving ? "not-allowed" : "pointer", fontSize: 14, opacity: isSaving ? 0.6 : 1 }}>
+      <div className="flex gap-2 mt-4">
+        <Button
+          onClick={() => onSave(content)}
+          disabled={isSaving}
+          className="bg-primary hover:bg-primary/90 text-primary-foreground"
+        >
           {isSaving ? "Saving…" : "Save changes"}
-        </button>
-        <button onClick={onCancel} disabled={isSaving}
-          style={{ padding: "8px 16px", background: "none", color: "#6b7280", border: "1px solid #e5e7eb", borderRadius: 6, cursor: "pointer", fontSize: 14 }}>
+        </Button>
+        <Button variant="outline" onClick={onCancel} disabled={isSaving}>
           Cancel
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -517,6 +567,7 @@ export default function EditorView() {
     setGenerating,
     resources,
     setResources,
+    topic,
   } = useStore();
 
   const version = useStore(currentVersion);
@@ -525,6 +576,12 @@ export default function EditorView() {
   const [isSaving, setIsSaving] = useState(false);
   const [patchTooltipVisible, setPatchTooltipVisible] = useState(false);
   const [applyingGeneral, setApplyingGeneral] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 4000);
+  };
 
   // Reset edit mode when switching slides
   useEffect(() => { setIsEditing(false); }, [activeSlideId]);
@@ -569,8 +626,8 @@ export default function EditorView() {
       const newVersion = await res.json();
       pushVersion(newVersion);
       setIsEditing(false);
-    } catch (err) {
-      console.error("Save failed:", err);
+    } catch {
+      showToast("Could not save changes. Try again.");
     } finally {
       setIsSaving(false);
     }
@@ -595,6 +652,8 @@ export default function EditorView() {
       const newVersion = await res.json();
       pushVersion(newVersion);
       setChatInput("");
+    } catch {
+      showToast("Patch failed. Try again.");
     } finally {
       setGenerating(false);
       setApplyingGeneral(false);
@@ -603,6 +662,7 @@ export default function EditorView() {
 
   const handleRegen = async () => {
     if (!id) return;
+    if (!confirm("This will replace all slides with a new generation. Continue?")) return;
     setGenerating(true);
     try {
       const res = await fetch(`${API}/presentations/${id}/regen`, {
@@ -613,163 +673,377 @@ export default function EditorView() {
       const newVersion = await res.json();
       pushVersion(newVersion);
       setChatInput("");
+    } catch {
+      showToast("Regeneration failed. Try again.");
     } finally {
       setGenerating(false);
     }
   };
 
+  // Source badge color helper
+  function sourceBadgeClass(source: string): string {
+    switch (source) {
+      case "generated": return "bg-blue-100 text-blue-700";
+      case "ai_patch": return "bg-purple-100 text-purple-700";
+      case "ai_regen": return "bg-orange-100 text-orange-700";
+      case "outline_refined": return "bg-teal-100 text-teal-700";
+      default: return "bg-gray-100 text-gray-600";
+    }
+  }
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", fontFamily: "sans-serif" }}>
+    <div className="flex flex-col h-screen">
       <style>{`
         @keyframes _editor-spin { to { transform: rotate(360deg); } }
         @keyframes _shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
       `}</style>
+
+      {/* Toast banner */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
+          <Card className="border-l-4 border-l-destructive shadow-lg px-4 py-3 flex items-center gap-3">
+            <span
+              style={{ cursor: "pointer", color: "var(--muted-foreground)" }}
+              onClick={() => setToast(null)}
+            >
+              ✕
+            </span>
+            <span className="text-small">{toast}</span>
+          </Card>
+        </div>
+      )}
+
       {/* Top bar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 16px", borderBottom: "1px solid #ddd", background: "#fafafa" }}>
-        <button onClick={undo} disabled={currentVersionIndex <= 0} title="Undo"
-          style={{ fontSize: 16, cursor: currentVersionIndex > 0 ? "pointer" : "not-allowed", opacity: currentVersionIndex > 0 ? 1 : 0.4, background: "none", border: "none" }}>←</button>
-        <button onClick={redo} disabled={currentVersionIndex >= versions.length - 1} title="Redo"
-          style={{ fontSize: 16, cursor: currentVersionIndex < versions.length - 1 ? "pointer" : "not-allowed", opacity: currentVersionIndex < versions.length - 1 ? 1 : 0.4, background: "none", border: "none" }}>→</button>
-        <span style={{ fontSize: 13, color: "#555" }}>Version {currentVersionIndex + 1} of {versions.length}</span>
-        <div style={{ flex: 1 }} />
-        <a href={id ? `${API}/presentations/${id}/export/pptx` : undefined} download
-          style={{ fontSize: 13, padding: "4px 12px", background: "#16a34a", color: "#fff", border: "none", borderRadius: 4, textDecoration: "none", cursor: "pointer", pointerEvents: id ? "auto" : "none", opacity: id ? 1 : 0.4 }}>
+      <div
+        className="flex items-center gap-2 px-4 border-b border-border bg-card shadow-sm"
+        style={{ height: 52, flexShrink: 0 }}
+      >
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={undo}
+          disabled={currentVersionIndex <= 0}
+          title="Undo"
+        >
+          ←
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={redo}
+          disabled={currentVersionIndex >= versions.length - 1}
+          title="Redo"
+        >
+          →
+        </Button>
+        <span className="text-small" style={{ color: "var(--muted-foreground)" }}>
+          Version {currentVersionIndex + 1} of {versions.length}
+        </span>
+
+        {/* Confidence badge from active slide */}
+        {activeSlide && (
+          <Badge
+            variant="secondary"
+            style={{
+              color: confidenceColor(activeSlide.confidence.score),
+              background: confidenceColor(activeSlide.confidence.score) + "18",
+            }}
+          >
+            {(activeSlide.confidence.score * 100).toFixed(0)}% confident
+          </Badge>
+        )}
+
+        <div className="flex-1" />
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={toggleSidebar}
+        >
+          {isSidebarOpen ? "Hide history" : "History"}
+        </Button>
+
+        <Button
+          size="sm"
+          className="bg-primary text-primary-foreground font-semibold"
+          disabled={!id}
+          onClick={() => {
+            const q = topic ? `?topic=${encodeURIComponent(topic)}` : "";
+            window.open(`/present/${id}${q}`, "_blank");
+          }}
+        >
+          ▶ Present
+        </Button>
+
+        <a
+          href={id ? `${API}/presentations/${id}/export/pptx` : undefined}
+          download
+          className={cn(
+            "text-small px-3 py-1.5 rounded-md border border-border font-medium transition-colors",
+            id ? "hover:bg-muted" : "opacity-40 pointer-events-none"
+          )}
+        >
           Download PPTX
         </a>
-        <button onClick={toggleSidebar} style={{ fontSize: 13, cursor: "pointer", background: "none", border: "1px solid #ccc", borderRadius: 4, padding: "4px 10px" }}>
-          {isSidebarOpen ? "Hide history" : "History"}
-        </button>
       </div>
 
       {/* Main area */}
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-        {/* Left: slide list */}
-        <div style={{ width: 200, borderRight: "1px solid #ddd", overflowY: "auto", padding: 8, flexShrink: 0 }}>
-          {version?.slides.map((slide) => (
-            <div key={slide.id} onClick={() => setActiveSlide(slide.id)}
-              style={{ padding: "8px 10px", marginBottom: 4, borderRadius: 4, cursor: "pointer", background: activeSlideId === slide.id ? "#dbeafe" : "transparent", border: selectedSlideIds.includes(slide.id) ? "2px solid #2563eb" : "2px solid transparent", fontSize: 13 }}>
-              <input type="checkbox" checked={selectedSlideIds.includes(slide.id)}
-                onChange={(e) => { e.stopPropagation(); toggleSlideSelection(slide.id); }} style={{ marginRight: 6 }} />
-              {slide.title}
-            </div>
-          ))}
-        </div>
+      <div className="flex flex-1 overflow-hidden">
 
-        {/* Center: slide content */}
-        <div style={{ flex: 1, padding: 32, overflowY: "auto" }}>
-          {activeSlide ? (
-            <>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <h3 style={{ margin: 0, color: "#555", fontSize: 13, textTransform: "uppercase", letterSpacing: 1 }}>
-                  {activeSlide.layout}
-                </h3>
-                {!isEditing && (
-                  <button onClick={() => setIsEditing(true)}
-                    style={{ fontSize: 13, background: "none", border: "1px solid #e5e7eb", borderRadius: 4, padding: "4px 10px", cursor: "pointer", color: "#374151" }}>
-                    ✎ Edit slide
-                  </button>
+        {/* Left: slide panel (220px) */}
+        <div
+          className="border-r border-border flex-shrink-0 flex flex-col overflow-hidden"
+          style={{ width: 220, background: "var(--muted)" }}
+        >
+          <div
+            className="flex items-center justify-between px-3 border-b border-border"
+            style={{ paddingTop: 10, paddingBottom: 10 }}
+          >
+            <span className="text-subheading">Slides</span>
+            <Badge variant="secondary" className="text-micro">
+              {version?.slides.length ?? 0}
+            </Badge>
+          </div>
+          <div className="overflow-y-auto flex-1 py-1">
+            {version?.slides.map((slide, idx) => (
+              <div
+                key={slide.id}
+                onClick={() => setActiveSlide(slide.id)}
+                className={cn(
+                  "px-3 py-2.5 cursor-pointer rounded-sm mx-1 my-0.5 transition-colors",
+                  activeSlideId === slide.id ? "" : "hover:bg-secondary"
                 )}
-              </div>
-              {isEditing ? (
-                <SlideEditor
-                  slide={activeSlide}
-                  topicResources={topicResources}
-                  onSave={handleSaveEdit}
-                  onCancel={() => setIsEditing(false)}
-                  isSaving={isSaving}
-                  presentationId={id ?? ""}
-                />
-              ) : (
-                <SlideViewer slide={activeSlide} topicResources={topicResources} />
-              )}
-            </>
-          ) : (
-            <p style={{ color: "#aaa" }}>Select a slide from the left panel.</p>
-          )}
-        </div>
-
-        {/* Right: speaker notes + meta */}
-        <div style={{ width: 240, borderLeft: "1px solid #ddd", padding: 16, overflowY: "auto", flexShrink: 0 }}>
-          {activeSlide ? (
-            <>
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>Speaker notes</div>
-                <p style={{ fontSize: 13, color: "#333", margin: 0 }}>
-                  {activeSlide.speaker_notes || <em style={{ color: "#aaa" }}>None</em>}
-                </p>
-              </div>
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 12, color: "#888" }}>Est. duration</div>
-                <div style={{ fontSize: 14 }}>{activeSlide.estimated_minutes} min</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>
-                  Confidence {(activeSlide.confidence.score * 100).toFixed(0)}%
+                style={{
+                  borderLeft: activeSlideId === slide.id
+                    ? "3px solid #16a34a"
+                    : "3px solid transparent",
+                  background: activeSlideId === slide.id ? "rgba(22,163,74,0.08)" : undefined,
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedSlideIds.includes(slide.id)}
+                    onChange={(e) => { e.stopPropagation(); toggleSlideSelection(slide.id); }}
+                  />
+                  <span className="text-micro" style={{ color: "var(--muted-foreground)" }}>
+                    {String(idx + 1).padStart(2, "0")}
+                  </span>
+                  <span className="text-small font-medium truncate">{slide.title}</span>
                 </div>
-                <div style={{ height: 6, background: "#eee", borderRadius: 3 }}>
-                  <div style={{ height: "100%", borderRadius: 3, width: `${activeSlide.confidence.score * 100}%`, background: confidenceColor(activeSlide.confidence.score) }} />
+                <div className="mt-0.5 ml-6">
+                  <span
+                    className="text-micro px-1.5 py-0.5 rounded"
+                    style={{ background: "var(--border)", color: "var(--muted-foreground)" }}
+                  >
+                    {slide.layout}
+                  </span>
                 </div>
-                {activeSlide.confidence.flags.map((f, i) => (
-                  <div key={i} style={{ marginTop: 6, fontSize: 11, color: "#b45309", background: "#fef3c7", borderRadius: 3, padding: "3px 6px" }}>
-                    {f.type}: {f.detail}
-                  </div>
-                ))}
-              </div>
-              {(() => {
-                const selected = topicResources.filter((r) => r.is_selected).slice(0, 5);
-                if (topicResources.length === 0) return null;
-                return (
-                  <div style={{ marginTop: 16 }}>
-                    <div style={{ fontSize: 12, color: "#888", marginBottom: 8 }}>Resources</div>
-                    {selected.length === 0 ? (
-                      <p style={{ fontSize: 12, color: "#aaa", margin: 0 }}>No resources selected.</p>
-                    ) : (
-                      selected.map((r) => {
-                        const domain = (() => { try { return new URL(r.url).hostname.replace("www.", ""); } catch { return ""; } })();
-                        const icons: Record<string, string> = { video: "▶", paper: "📄", course: "🎓", article: "🔗" };
-                        return (
-                          <div key={r.id} style={{ marginBottom: 8 }}>
-                            <a href={r.url} target="_blank" rel="noopener noreferrer"
-                              style={{ fontSize: 12, color: "#2563eb", textDecoration: "none", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {icons[r.source_type]} {r.title.slice(0, 50)}{r.title.length > 50 ? "…" : ""}
-                            </a>
-                            <span style={{ fontSize: 10, color: "#16a34a" }}>{domain}</span>
-                          </div>
-                        );
-                      })
-                    )}
-                    {topicResources.filter((r) => r.is_selected).length > 5 && (
-                      <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
-                        +{topicResources.filter((r) => r.is_selected).length - 5} more
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-            </>
-          ) : (
-            <p style={{ color: "#aaa", fontSize: 13 }}>No slide selected.</p>
-          )}
-        </div>
-
-        {/* Version sidebar */}
-        {isSidebarOpen && (
-          <div style={{ width: 240, borderLeft: "1px solid #ddd", overflowY: "auto", background: "#f9f9f9" }}>
-            <div style={{ padding: 12, borderBottom: "1px solid #ddd", fontWeight: 600, fontSize: 13 }}>Version history</div>
-            {versions.map((v, i) => (
-              <div key={v.id} onClick={() => jumpToVersion(v.id)}
-                style={{ padding: "10px 12px", cursor: "pointer", background: i === currentVersionIndex ? "#dbeafe" : "transparent", borderBottom: "1px solid #eee", fontSize: 12 }}>
-                <span style={{ display: "inline-block", marginRight: 6, padding: "1px 6px", background: "#e5e7eb", borderRadius: 9999 }}>{v.source}</span>
-                <div style={{ marginTop: 2, color: "#666" }}>{new Date(v.created_at).toLocaleTimeString()}</div>
               </div>
             ))}
           </div>
-        )}
+        </div>
+
+        {/* Center: slide canvas */}
+        <div
+          className="flex-1 flex items-start justify-center overflow-y-auto p-8"
+          style={{ background: "var(--muted)" }}
+        >
+          {activeSlide ? (
+            <Card
+              className={cn(
+                "w-full max-w-3xl shadow-lg rounded-2xl",
+                isEditing && "border-2 border-primary ring-2 ring-primary/20"
+              )}
+            >
+              <CardContent className="p-12 min-h-96 relative">
+                {/* Editing badge */}
+                {isEditing && (
+                  <div className="absolute top-4 right-4">
+                    <Badge className="bg-primary text-primary-foreground">Editing</Badge>
+                  </div>
+                )}
+
+                {/* Topic label */}
+                <div className="text-subheading text-primary mb-2.5">
+                  {activeSlide.layout}
+                </div>
+
+                {/* Slide title */}
+                <div className="text-display mb-6">{activeSlide.title}</div>
+
+                {/* Edit button when not editing */}
+                {!isEditing && (
+                  <div className="mb-4 flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsEditing(true)}
+                    >
+                      ✎ Edit slide
+                    </Button>
+                  </div>
+                )}
+
+                {isEditing ? (
+                  <SlideEditor
+                    slide={activeSlide}
+                    topicResources={topicResources}
+                    onSave={handleSaveEdit}
+                    onCancel={() => setIsEditing(false)}
+                    isSaving={isSaving}
+                    presentationId={id ?? ""}
+                  />
+                ) : (
+                  <SlideViewer slide={activeSlide} topicResources={topicResources} />
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            <p className="text-small" style={{ color: "var(--muted-foreground)" }}>
+              Select a slide from the left panel.
+            </p>
+          )}
+        </div>
+
+        {/* Right: meta panel (260px) */}
+        <div
+          className="border-l border-border flex-shrink-0 flex flex-col overflow-hidden"
+          style={{ width: 260, background: "var(--muted)" }}
+        >
+          <ScrollArea className="h-full">
+            <div className="p-4">
+              {activeSlide ? (
+                <>
+                  {/* Speaker notes */}
+                  <div className="text-subheading mb-2">Speaker notes</div>
+                  <p className="text-small" style={{ color: "var(--foreground)" }}>
+                    {activeSlide.speaker_notes || (
+                      <em style={{ color: "var(--muted-foreground)" }}>None</em>
+                    )}
+                  </p>
+
+                  <Separator className="my-4" />
+
+                  {/* Duration */}
+                  <div className="text-subheading mb-1">Duration</div>
+                  <div className="text-body">{activeSlide.estimated_minutes} min</div>
+
+                  <Separator className="my-4" />
+
+                  {/* Confidence */}
+                  <div className="text-subheading mb-2">
+                    Confidence {(activeSlide.confidence.score * 100).toFixed(0)}%
+                  </div>
+                  <Progress
+                    value={activeSlide.confidence.score * 100}
+                    className="h-1.5"
+                    style={
+                      { "--progress-fill": confidenceColor(activeSlide.confidence.score) } as React.CSSProperties
+                    }
+                  />
+                  <div className="mt-2 flex flex-col gap-1">
+                    {activeSlide.confidence.flags.map((f, i) => (
+                      <Badge
+                        key={i}
+                        variant="secondary"
+                        className="text-micro bg-yellow-50 text-yellow-800 border border-yellow-200 justify-start"
+                      >
+                        {f.type}: {f.detail}
+                      </Badge>
+                    ))}
+                  </div>
+
+                  {/* Resources */}
+                  {topicResources.length > 0 && (() => {
+                    const selected = topicResources.filter((r) => r.is_selected).slice(0, 5);
+                    return (
+                      <>
+                        <Separator className="my-4" />
+                        <div className="text-subheading mb-2">Resources</div>
+                        {selected.length === 0 ? (
+                          <p className="text-small" style={{ color: "var(--muted-foreground)" }}>
+                            No resources selected.
+                          </p>
+                        ) : (
+                          selected.map((r) => {
+                            const domain = (() => { try { return new URL(r.url).hostname.replace("www.", ""); } catch { return ""; } })();
+                            const icons: Record<string, string> = { video: "▶", paper: "📄", course: "🎓", article: "🔗" };
+                            return (
+                              <div key={r.id} className="mb-2">
+                                <a
+                                  href={r.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-small text-primary block truncate hover:underline"
+                                >
+                                  {icons[r.source_type]} {r.title.slice(0, 50)}{r.title.length > 50 ? "…" : ""}
+                                </a>
+                                <span className="text-micro" style={{ color: "#16a34a" }}>{domain}</span>
+                              </div>
+                            );
+                          })
+                        )}
+                        {topicResources.filter((r) => r.is_selected).length > 5 && (
+                          <div className="text-micro mt-1" style={{ color: "var(--muted-foreground)" }}>
+                            +{topicResources.filter((r) => r.is_selected).length - 5} more
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </>
+              ) : (
+                <p className="text-small" style={{ color: "var(--muted-foreground)" }}>
+                  No slide selected.
+                </p>
+              )}
+            </div>
+          </ScrollArea>
+        </div>
       </div>
 
-      {/* Bottom bar */}
-      <div style={{ borderTop: "1px solid #ddd", padding: "10px 16px", display: "flex", gap: 8, alignItems: "center", background: "#fafafa" }}>
-        <input
+      {/* Version sidebar (Sheet) */}
+      <Sheet open={isSidebarOpen} onOpenChange={toggleSidebar}>
+        <SheetContent side="right" className="w-80 p-0">
+          <SheetHeader className="px-4 py-3 border-b">
+            <SheetTitle className="text-small font-semibold">Version history</SheetTitle>
+          </SheetHeader>
+          <ScrollArea className="h-full">
+            {versions.map((v, i) => (
+              <div
+                key={v.id}
+                onClick={() => jumpToVersion(v.id)}
+                className={cn(
+                  "px-4 py-3 cursor-pointer border-b border-border/50 hover:bg-muted transition-colors",
+                  i === currentVersionIndex && "bg-primary/5"
+                )}
+              >
+                <Badge
+                  variant="secondary"
+                  className={cn("text-micro", sourceBadgeClass(v.source))}
+                >
+                  {v.source}
+                </Badge>
+                <div className="text-micro mt-1.5" style={{ color: "var(--muted-foreground)" }}>
+                  {new Date(v.created_at).toLocaleTimeString()}
+                </div>
+              </div>
+            ))}
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
+
+      {/* Bottom chat bar */}
+      <div
+        className="border-t border-border px-4 flex items-center gap-2 bg-background"
+        style={{
+          height: 68,
+          flexShrink: 0,
+          boxShadow: "0 -2px 8px rgba(0,0,0,0.04)",
+        }}
+      >
+        <Input
           type="text"
           placeholder={
             selectedSlideIds.length > 0
@@ -784,98 +1058,74 @@ export default function EditorView() {
               selectedSlideIds.length > 0 ? handlePatch(selectedSlideIds) : handlePatch([]);
             }
           }}
-          style={{ flex: 1, padding: "8px 12px", border: "1px solid #ccc", borderRadius: 6, fontSize: 14 }}
+          className="flex-1"
         />
 
         {/* Mode 1: General query (no slides selected) */}
         {selectedSlideIds.length === 0 && (
-          <div style={{ position: "relative" }}
+          <div
+            className="relative"
             onMouseEnter={() => setPatchTooltipVisible(true)}
             onMouseLeave={() => setPatchTooltipVisible(false)}
           >
             {patchTooltipVisible && (
-              <div style={{
-                position: "absolute",
-                bottom: "calc(100% + 6px)",
-                right: 0,
-                background: "#1f2937",
-                color: "#ffffff",
-                fontSize: 12,
-                borderRadius: 6,
-                padding: "6px 10px",
-                maxWidth: 300,
-                whiteSpace: "normal" as const,
-                width: 280,
-                lineHeight: 1.5,
-                pointerEvents: "none",
-                zIndex: 100,
-              }}>
+              <div
+                className="absolute bottom-full right-0 mb-1.5 text-small rounded-md px-3 py-2 z-10 w-72"
+                style={{
+                  background: "#1f2937",
+                  color: "#fff",
+                  lineHeight: 1.5,
+                  pointerEvents: "none",
+                }}
+              >
                 Select slides in the left panel to patch specific slides, or use "Apply to presentation" for general changes
               </div>
             )}
-            <button
+            <Button
               onClick={() => handlePatch([])}
               disabled={isGenerating || !chatInput.trim()}
-              style={{
-                padding: "8px 16px",
-                background: "#2563eb",
-                color: "#fff",
-                border: "none",
-                borderRadius: 6,
-                cursor: isGenerating || !chatInput.trim() ? "not-allowed" : "pointer",
-                fontSize: 14,
-                opacity: !applyingGeneral && !chatInput.trim() ? 0.5 : 1,
-                transition: "opacity 150ms ease",
-                whiteSpace: "nowrap",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-              }}
+              className="whitespace-nowrap"
             >
               {applyingGeneral && (
-                <span style={{
-                  width: 13,
-                  height: 13,
-                  border: "2px solid rgba(255,255,255,0.35)",
-                  borderTopColor: "#fff",
-                  borderRadius: "50%",
-                  display: "inline-block",
-                  animation: "_editor-spin 0.7s linear infinite",
-                  flexShrink: 0,
-                }} />
+                <span
+                  style={{
+                    width: 13,
+                    height: 13,
+                    border: "2px solid rgba(255,255,255,0.35)",
+                    borderTopColor: "#fff",
+                    borderRadius: "50%",
+                    display: "inline-block",
+                    animation: "_editor-spin 0.7s linear infinite",
+                    flexShrink: 0,
+                    marginRight: 6,
+                  }}
+                />
               )}
               {applyingGeneral ? "Applying…" : "Apply to presentation"}
-            </button>
+            </Button>
           </div>
         )}
 
         {/* Mode 2: Targeted patch (slides selected) */}
         {selectedSlideIds.length > 0 && (
-          <button
+          <Button
             onClick={() => handlePatch(selectedSlideIds)}
             disabled={isGenerating || !chatInput.trim()}
-            style={{
-              padding: "8px 16px",
-              background: "#16a34a",
-              color: "#fff",
-              border: "none",
-              borderRadius: 6,
-              cursor: isGenerating || !chatInput.trim() ? "not-allowed" : "pointer",
-              fontSize: 14,
-              opacity: isGenerating || !chatInput.trim() ? 0.5 : 1,
-              transition: "opacity 150ms ease",
-              whiteSpace: "nowrap",
-            }}
+            className="bg-primary hover:bg-primary/90 text-primary-foreground whitespace-nowrap"
           >
             Patch {selectedSlideIds.length} slide{selectedSlideIds.length === 1 ? "" : "s"}
-          </button>
+          </Button>
         )}
 
-        {/* Mode 3: Regen (always visible) */}
-        <button onClick={handleRegen} disabled={isGenerating}
-          style={{ padding: "8px 16px", background: "#7c3aed", color: "#fff", border: "none", borderRadius: 6, cursor: isGenerating ? "not-allowed" : "pointer", fontSize: 14, opacity: isGenerating ? 0.5 : 1, whiteSpace: "nowrap" }}>
+        {/* Mode 3: Regen */}
+        <Button
+          variant="outline"
+          onClick={handleRegen}
+          disabled={isGenerating}
+          className="text-orange-600 border-orange-200 hover:bg-orange-50 whitespace-nowrap"
+        >
           Regenerate
-        </button>
+        </Button>
       </div>
     </div>
   );

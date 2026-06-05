@@ -19,6 +19,12 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useStore, currentVersion } from "../store";
 import { OutlineTopic, TopicResource, Version } from "../types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 
 function confidenceColor(score: number): string {
   if (score >= 0.9) return "#16a34a";
@@ -56,49 +62,36 @@ function CompactResourceRow({
 
   return (
     <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "6px 12px",
-        borderBottom: isLast ? "none" : "1px solid #f3f4f6",
-        minHeight: 40,
-      }}
+      className={cn(
+        "flex items-center gap-2 px-3 py-1.5",
+        !isLast && "border-b border-border/50"
+      )}
+      style={{ minHeight: 40 }}
     >
-      <span style={{ fontSize: 13, flexShrink: 0, width: 18, textAlign: "center" }}>
+      <span className="text-small flex-shrink-0 w-4 text-center">
         {SOURCE_ICONS[resource.source_type] ?? "🔗"}
       </span>
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div className="flex-1 min-w-0">
         <a
           href={resource.url}
           target="_blank"
           rel="noopener noreferrer"
-          style={{
-            color: "#111827",
-            fontWeight: 500,
-            fontSize: 13,
-            textDecoration: "none",
-            display: "block",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
+          className="text-small font-medium block truncate hover:underline"
+          style={{ color: "#111827" }}
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.textDecoration = "underline";
             (e.currentTarget as HTMLElement).style.color = "#16a34a";
           }}
           onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.textDecoration = "none";
             (e.currentTarget as HTMLElement).style.color = "#111827";
           }}
         >
           {truncatedTitle}
         </a>
-        <span style={{ fontSize: 11, color: "#9ca3af", display: "block" }}>
+        <span className="text-micro block" style={{ color: "var(--muted-foreground)" }}>
           {domain}
         </span>
       </div>
-      <span style={{ fontSize: 11, color: "#9ca3af", flexShrink: 0 }}>
+      <span className="text-micro flex-shrink-0" style={{ color: "var(--muted-foreground)" }}>
         {Math.round(resource.relevance_score * 100)}%
       </span>
     </div>
@@ -118,34 +111,21 @@ function ResourcesSection({ resources, isLoading, onCollapse, onRetry }: Resourc
   const visible = resources.slice(0, 8);
   return (
     <div
-      style={{
-        maxHeight: 220,
-        overflowY: "auto",
-        border: "1px solid #e5e7eb",
-        borderRadius: 8,
-        marginTop: 8,
-        background: "#fafafa",
-      }}
+      className="border border-border rounded-lg mt-2 overflow-hidden"
+      style={{ maxHeight: 220, overflowY: "auto", background: "var(--muted)" }}
     >
       {/* Header */}
       <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "6px 12px",
-          borderBottom: "1px solid #f3f4f6",
-          position: "sticky",
-          top: 0,
-          background: "#fafafa",
-        }}
+        className="flex justify-between items-center px-3 py-1.5 border-b border-border sticky top-0"
+        style={{ background: "var(--muted)" }}
       >
-        <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
+        <span className="text-small font-semibold">
           Resources ({resources.length})
         </span>
         <span
           onClick={onCollapse}
-          style={{ fontSize: 12, color: "#16a34a", cursor: "pointer", fontWeight: 500 }}
+          className="text-small cursor-pointer font-medium"
+          style={{ color: "#16a34a" }}
         >
           ↑ Collapse
         </span>
@@ -168,11 +148,14 @@ function ResourcesSection({ resources, isLoading, onCollapse, onRetry }: Resourc
 
       {/* Empty state */}
       {!isLoading && resources.length === 0 && (
-        <div style={{ textAlign: "center", padding: "20px 12px" }}>
-          <div style={{ fontSize: 13, color: "#9ca3af", marginBottom: 6 }}>No resources found</div>
+        <div className="text-center py-5 px-3">
+          <div className="text-small mb-1.5" style={{ color: "var(--muted-foreground)" }}>
+            No resources found
+          </div>
           <span
             onClick={onRetry}
-            style={{ fontSize: 13, color: "#16a34a", cursor: "pointer", fontWeight: 500 }}
+            className="text-small cursor-pointer font-medium"
+            style={{ color: "#16a34a" }}
           >
             Retry
           </span>
@@ -229,151 +212,141 @@ function TopicCard({
     }
   }
 
-  const cardStyle: React.CSSProperties = {
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 8,
-    display: "flex",
-    gap: 12,
-    position: "relative",
-    transform: CSS.Transform.toString(transform),
-    transition: transition ?? "transform 150ms ease",
-    opacity: isDragging ? 0.5 : 1,
-    boxShadow: isDragging ? "0 4px 16px rgba(0,0,0,0.12)" : "none",
-  };
+  const score = topic.confidence.score;
+  const fillColor = confidenceColor(score);
 
   return (
-    <div ref={setNodeRef} style={cardStyle} {...attributes}>
-      {/* Drag handle */}
-      <div
-        {...listeners}
-        style={{
-          cursor: isDragging ? "grabbing" : "grab",
-          color: "#9ca3af",
-          fontSize: 20,
-          userSelect: "none",
-          flexShrink: 0,
-          paddingTop: 1,
-          lineHeight: 1,
-          transition: "color 150ms ease",
-        }}
-        title="Drag to reorder"
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition: transition ?? "transform 150ms ease",
+        opacity: isDragging ? 0.5 : 1,
+      }}
+      {...attributes}
+    >
+      <Card
+        className={cn(
+          "mb-2 transition-all cursor-default",
+          isDragging ? "shadow-lg" : "hover:border-primary/40 hover:shadow-sm"
+        )}
       >
-        {"⠇"}
-      </div>
-
-      {/* Content */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {/* Top row: number + title + badges */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-              <span style={{ color: "#9ca3af", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-                {String(index + 1).padStart(2, "0")}
-              </span>
-              <strong style={{ fontSize: 15, color: "#111827", lineHeight: 1.4 }}>
-                {topic.title}
-              </strong>
+        <CardContent className="px-5 py-4">
+          {/* Row 1: drag handle + number + title */}
+          <div className="flex items-start gap-3">
+            <div
+              {...listeners}
+              className="text-xl leading-none flex-shrink-0 pt-0.5 select-none"
+              style={{
+                color: "var(--muted-foreground)",
+                cursor: isDragging ? "grabbing" : "grab",
+              }}
+              title="Drag to reorder"
+            >
+              ⠿
             </div>
-            {topic.rationale && (
-              <>
-                <p
-                  ref={rationaleRef}
-                  style={{
-                    margin: "4px 0 0",
-                    fontSize: 13,
-                    color: "#6b7280",
-                    lineHeight: 1.4,
-                    ...(isNoteExpanded
-                      ? {}
-                      : {
-                          display: "-webkit-box",
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical",
-                          overflow: "hidden",
-                        }),
-                  }}
+            <div className="flex-1 min-w-0">
+              {/* Title row */}
+              <div className="flex items-baseline gap-2">
+                <span
+                  className="text-micro font-bold flex-shrink-0"
+                  style={{ color: "var(--muted-foreground)" }}
                 >
-                  {topic.rationale}
-                </p>
-                {rationaleOverflows && (
-                  <span
-                    onClick={() => setIsNoteExpanded((v) => !v)}
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <strong className="text-body font-semibold" style={{ color: "var(--foreground)" }}>
+                  {topic.title}
+                </strong>
+              </div>
+
+              {/* Row 2: rationale */}
+              {topic.rationale && (
+                <>
+                  <p
+                    ref={rationaleRef}
+                    className="text-small mt-1"
                     style={{
-                      fontSize: 13,
-                      color: "#16a34a",
-                      cursor: "pointer",
-                      fontWeight: 500,
-                      display: "inline-block",
-                      marginTop: 2,
+                      color: "var(--muted-foreground)",
+                      lineHeight: 1.4,
+                      ...(isNoteExpanded
+                        ? {}
+                        : {
+                            display: "-webkit-box",
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: "vertical" as const,
+                            overflow: "hidden",
+                          }),
                     }}
                   >
-                    {isNoteExpanded ? "less" : "... more"}
-                  </span>
-                )}
-              </>
-            )}
-          </div>
-          <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-            {/* Weight dots — driven by topic.weight (1–5 importance), not slide_count */}
-            <span style={{ fontSize: 13, letterSpacing: 1, color: "#374151" }}>
-              {"●".repeat(topic.weight)}{"○".repeat(5 - topic.weight)}
-            </span>
-            {/* Slide badge */}
-            <span style={{
-              background: "#f3f4f6",
-              border: "1px solid #e5e7eb",
-              borderRadius: 4,
-              padding: "2px 8px",
-              fontSize: 12,
-              color: "#374151",
-              whiteSpace: "nowrap",
-            }}>
-              {topic.slide_count} slides
-            </span>
-            {/* Time badge */}
-            <span style={{
-              background: "#f3f4f6",
-              border: "1px solid #e5e7eb",
-              borderRadius: 4,
-              padding: "2px 8px",
-              fontSize: 12,
-              color: "#374151",
-              whiteSpace: "nowrap",
-            }}>
-              {topic.estimated_minutes} min
-            </span>
-          </div>
-        </div>
+                    {topic.rationale}
+                  </p>
+                  {rationaleOverflows && (
+                    <span
+                      onClick={() => setIsNoteExpanded((v) => !v)}
+                      className="text-small font-medium cursor-pointer inline-block mt-0.5"
+                      style={{ color: "#16a34a" }}
+                    >
+                      {isNoteExpanded ? "less" : "... more"}
+                    </span>
+                  )}
+                </>
+              )}
 
-        {/* Resources toggle / panel */}
-        {isResourcesOpen ? (
-          <ResourcesSection
-            resources={resources}
-            isLoading={isLoadingResources}
-            onCollapse={() => setIsResourcesOpen(false)}
-            onRetry={() => {
-              onRetryFetch();
-              setHasFetchedResources(true);
-            }}
-          />
-        ) : (
-          <div
-            onClick={handleOpenResources}
-            style={{
-              fontSize: 13,
-              color: "#16a34a",
-              cursor: "pointer",
-              fontWeight: 500,
-              marginTop: 8,
-            }}
-          >
-            📎 View resources →
+              {/* Row 3: badges */}
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                {/* Weight dots */}
+                <span className="text-small" style={{ color: "#16a34a", letterSpacing: 1 }}>
+                  {"●".repeat(topic.weight)}
+                  <span style={{ color: "var(--border)" }}>{"●".repeat(5 - topic.weight)}</span>
+                </span>
+
+                <Badge variant="secondary" className="text-micro">
+                  {topic.slide_count} slides
+                </Badge>
+                <Badge variant="secondary" className="text-micro">
+                  {topic.estimated_minutes} min
+                </Badge>
+              </div>
+
+              {/* Confidence bar */}
+              <div
+                className="mt-2 h-1 rounded-full"
+                style={{ background: "var(--border)" }}
+              >
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${score * 100}%`,
+                    background: fillColor,
+                    transition: "width 300ms ease",
+                  }}
+                />
+              </div>
+
+              {/* Resources toggle / panel */}
+              {isResourcesOpen ? (
+                <ResourcesSection
+                  resources={resources}
+                  isLoading={isLoadingResources}
+                  onCollapse={() => setIsResourcesOpen(false)}
+                  onRetry={() => {
+                    onRetryFetch();
+                    setHasFetchedResources(true);
+                  }}
+                />
+              ) : (
+                <div
+                  onClick={handleOpenResources}
+                  className="text-small font-medium cursor-pointer mt-2"
+                  style={{ color: "#16a34a" }}
+                >
+                  📎 View resources →
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -430,84 +403,64 @@ function OutlineChatBar({ presentationId, onNewVersion }: OutlineChatBarProps) {
   const canSend = !isSubmitting && input.trim().length > 0;
 
   return (
-    <div style={{ position: "relative" }}>
+    <div className="relative">
       {toast && (
-        <div style={{
-          position: "fixed",
-          top: 20,
-          right: 20,
-          zIndex: 1000,
-          padding: "10px 18px",
-          borderRadius: 8,
-          fontSize: 14,
-          fontWeight: 500,
-          color: "#ffffff",
-          background: toast.type === "success" ? "#16a34a" : "#dc2626",
-          boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
-          transition: "opacity 150ms ease",
-          pointerEvents: "none",
-        }}>
+        <div
+          className="fixed top-5 right-5 z-50 px-4 py-2.5 rounded-lg text-small font-medium text-white shadow-lg"
+          style={{
+            background: toast.type === "success" ? "#16a34a" : "#dc2626",
+            transition: "opacity 150ms ease",
+            pointerEvents: "none",
+          }}
+        >
           {toast.type === "success" ? "✓ " : "✕ "}{toast.msg}
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8 }}>
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
-          placeholder={isSubmitting ? "Refining outline…" : "Ask to adjust topics, depth, or structure…"}
-          disabled={isSubmitting}
-          style={{
-            flex: 1,
-            padding: "10px 14px",
-            fontSize: 14,
-            border: "1px solid #e5e7eb",
-            borderRadius: 6,
-            outline: "none",
-            background: isSubmitting ? "#f9fafb" : "#ffffff",
-            color: "#111827",
-            transition: "background 150ms ease",
-          }}
-        />
-        <button
-          onClick={handleSend}
-          disabled={!canSend}
-          style={{
-            padding: "10px 18px",
-            fontSize: 14,
-            background: canSend ? "#2563eb" : "#e5e7eb",
-            color: canSend ? "#ffffff" : "#9ca3af",
-            border: "none",
-            borderRadius: 6,
-            cursor: canSend ? "pointer" : "not-allowed",
-            transition: "background 150ms ease, color 150ms ease",
-            whiteSpace: "nowrap",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          {isSubmitting && (
-            <span style={{
-              width: 14,
-              height: 14,
-              border: "2px solid rgba(0,0,0,0.15)",
-              borderTopColor: "#6b7280",
-              borderRadius: "50%",
-              display: "inline-block",
-              animation: "_outline-spin 0.7s linear infinite",
-              flexShrink: 0,
-            }} />
-          )}
-          {isSubmitting ? "Refining…" : "Send"}
-        </button>
-      </div>
+      <Card className="p-3">
+        <div className="flex gap-2">
+          <Input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            placeholder={isSubmitting ? "Refining outline…" : "Ask to adjust topics, depth, or structure…"}
+            disabled={isSubmitting}
+            className="flex-1"
+          />
+          <Button
+            onClick={handleSend}
+            disabled={!canSend}
+            className={cn(
+              "whitespace-nowrap",
+              canSend
+                ? "bg-primary hover:bg-primary/90 text-primary-foreground"
+                : "bg-secondary text-muted-foreground"
+            )}
+          >
+            {isSubmitting && (
+              <span
+                style={{
+                  width: 14,
+                  height: 14,
+                  border: "2px solid rgba(0,0,0,0.15)",
+                  borderTopColor: "#6b7280",
+                  borderRadius: "50%",
+                  display: "inline-block",
+                  animation: "_outline-spin 0.7s linear infinite",
+                  flexShrink: 0,
+                  marginRight: 6,
+                }}
+              />
+            )}
+            {isSubmitting ? "Refining…" : "Send"}
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -645,13 +598,10 @@ export default function OutlineView() {
     ? "Generate slides (low confidence)"
     : "Generate slides →";
 
-  const approveBg = gateBlocked ? "#e5e7eb" : gateWarning ? "#ea580c" : "#16a34a";
-  const approveColor = gateBlocked ? "#9ca3af" : "#ffffff";
-
   // ── Loading / empty states ──
   if (loading) {
     return (
-      <div style={{ padding: 40, textAlign: "center", color: "#6b7280", fontSize: 14 }}>
+      <div className="p-10 text-center text-small" style={{ color: "var(--muted-foreground)" }}>
         Loading outline…
       </div>
     );
@@ -659,20 +609,19 @@ export default function OutlineView() {
 
   if (!version) {
     return (
-      <div style={{ padding: 40 }}>
-        <p style={{ color: "#6b7280", marginBottom: 16 }}>No outline found.</p>
-        <button
-          onClick={() => navigate("/")}
-          style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#2563eb" }}
-        >
+      <div className="p-10">
+        <p className="text-small mb-4" style={{ color: "var(--muted-foreground)" }}>
+          No outline found.
+        </p>
+        <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
           ← Go back
-        </button>
+        </Button>
       </div>
     );
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f9fafb", display: "flex", flexDirection: "column" }}>
+    <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
       <style>{`
         @keyframes _outline-spin { to { transform: rotate(360deg); } }
         @keyframes _shimmer {
@@ -682,104 +631,53 @@ export default function OutlineView() {
       `}</style>
 
       {/* ── Header ── */}
-      <div style={{
-        position: "sticky",
-        top: 0,
-        background: "#ffffff",
-        borderBottom: "1px solid #e5e7eb",
-        zIndex: 10,
-        padding: "12px 24px",
-        display: "flex",
-        alignItems: "center",
-        gap: 16,
-      }}>
-        <button
-          onClick={() => navigate("/")}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            fontSize: 14,
-            color: "#6b7280",
-            padding: "4px 0",
-            flexShrink: 0,
-            transition: "color 150ms ease",
-          }}
-        >
+      <div
+        className="sticky top-0 bg-background border-b border-border z-10 flex items-center justify-between px-6"
+        style={{ height: 56 }}
+      >
+        <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
           ← Back
-        </button>
-        <div style={{
-          flex: 1,
-          fontWeight: 600,
-          fontSize: 16,
-          color: "#111827",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}>
+        </Button>
+        <div
+          className="text-heading flex-1 mx-4 truncate text-center"
+          style={{ color: "var(--foreground)" }}
+        >
           {topic || "Presentation"}
         </div>
-        {/* Confidence badge */}
-        <div style={{
-          background: overallColor + "18",
-          color: overallColor,
-          border: `1px solid ${overallColor}40`,
-          borderRadius: 20,
-          padding: "4px 14px",
-          fontSize: 13,
-          fontWeight: 600,
-          flexShrink: 0,
-        }}>
+        <Badge
+          variant="secondary"
+          style={{
+            background: overallColor + "18",
+            color: overallColor,
+            border: `1px solid ${overallColor}40`,
+          }}
+        >
           {overallPct}% confident
-        </div>
+        </Badge>
       </div>
 
       {/* ── Gate banners ── */}
       {gateBlocked && (
-        <div style={{
-          background: "#fef2f2",
-          borderBottom: "1px solid #fecaca",
-          borderLeft: "4px solid #dc2626",
-          padding: "12px 24px",
-          color: "#991b1b",
-          fontSize: 13,
-        }}>
-          ⚠ Confidence is below 50%. Please refine the topic or add context in the chat before generating slides.
-        </div>
+        <Card className="border-l-4 border-l-destructive p-4 mb-4 mx-6 mt-4 bg-red-50/50 rounded-lg">
+          <span className="text-small text-red-800">
+            ⚠ Confidence is below 50%. Please refine the topic or add context in the chat before generating slides.
+          </span>
+        </Card>
       )}
       {gateWarning && (
-        <div style={{
-          background: "#fff7ed",
-          borderBottom: "1px solid #fed7aa",
-          borderLeft: "4px solid #ea580c",
-          padding: "12px 24px",
-          color: "#9a3412",
-          fontSize: 13,
-        }}>
-          Content confidence is moderate. You can proceed or refine further.
-        </div>
+        <Card className="border-l-4 border-l-yellow-500 p-4 mb-4 mx-6 mt-4 bg-yellow-50/50 rounded-lg">
+          <span className="text-small text-yellow-800">
+            Content confidence is moderate. You can proceed or refine further.
+          </span>
+        </Card>
       )}
 
       {/* ── Main content ── */}
-      <div style={{
-        flex: 1,
-        maxWidth: 900,
-        margin: "0 auto",
-        width: "100%",
-        padding: "24px 24px 100px",
-        display: "flex",
-        gap: 24,
-        boxSizing: "border-box",
-      }}>
+      <div className="max-w-5xl mx-auto px-6 w-full flex-1 py-6 flex gap-6 box-border pb-24">
 
         {/* Left column: topic list */}
         <div style={{ flex: "0 0 60%", minWidth: 0 }}>
-          <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 700, color: "#111827" }}>
-            {topic || "Presentation Outline"}
-          </h2>
-          <p style={{ margin: "0 0 20px", fontSize: 13, color: "#6b7280" }}>
-            Drag to reorder topics. Each topic's slide count reflects its importance.
-          </p>
+          <div className="text-subheading mb-3">Topics</div>
 
           <DndContext
             sensors={sensors}
@@ -808,61 +706,50 @@ export default function OutlineView() {
         </div>
 
         {/* Right column: stats + chat */}
-        <div style={{ flex: "0 0 40%", display: "flex", flexDirection: "column", gap: 0, minWidth: 0 }}>
+        <div style={{ flex: "0 0 40%", minWidth: 0 }} className="flex flex-col gap-4">
 
           {/* Stats card */}
-          <div style={{
-            background: "#ffffff",
-            border: "1px solid #e5e7eb",
-            borderRadius: 8,
-            padding: 16,
-            marginBottom: 16,
-          }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "#111827", marginBottom: 14 }}>
-              Total: {totalSlides} slides · {totalMinutes} minutes
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {topics.map((t) => (
-                <div key={t.id}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                    <span style={{
-                      fontSize: 12,
-                      color: "#374151",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      maxWidth: "80%",
-                    }}>
-                      {t.title}
-                    </span>
-                    <span style={{ fontSize: 12, color: "#6b7280", flexShrink: 0, marginLeft: 8 }}>
-                      {t.estimated_minutes}m
-                    </span>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-body font-semibold mb-3" style={{ color: "var(--foreground)" }}>
+                Total: {totalSlides} slides · {totalMinutes} minutes
+              </div>
+              <div className="flex flex-col gap-2.5">
+                {topics.map((t) => (
+                  <div key={t.id}>
+                    <div className="flex justify-between mb-1">
+                      <span
+                        className="text-small truncate"
+                        style={{ color: "var(--foreground)", maxWidth: "80%" }}
+                      >
+                        {t.title}
+                      </span>
+                      <span
+                        className="text-small flex-shrink-0 ml-2"
+                        style={{ color: "var(--muted-foreground)" }}
+                      >
+                        {t.estimated_minutes}m
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full" style={{ background: "var(--border)" }}>
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${(t.estimated_minutes / maxMinutes) * 100}%`,
+                          background: "#16a34a",
+                          transition: "width 300ms ease",
+                        }}
+                      />
+                    </div>
                   </div>
-                  <div style={{ height: 6, background: "#e5e7eb", borderRadius: 3 }}>
-                    <div style={{
-                      height: "100%",
-                      borderRadius: 3,
-                      width: `${(t.estimated_minutes / maxMinutes) * 100}%`,
-                      background: "#2563eb",
-                      transition: "width 300ms ease",
-                    }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Chat bar */}
-          <div style={{
-            background: "#ffffff",
-            border: "1px solid #e5e7eb",
-            borderRadius: 8,
-            padding: 16,
-          }}>
-            <p style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 600, color: "#374151" }}>
-              Refine outline
-            </p>
+          <div>
+            <p className="text-subheading mb-2">Refine outline</p>
             <OutlineChatBar
               presentationId={presentationId || routeId || ""}
               onNewVersion={handleNewVersion}
@@ -872,37 +759,28 @@ export default function OutlineView() {
       </div>
 
       {/* ── Footer ── */}
-      <div style={{
-        position: "sticky",
-        bottom: 0,
-        background: "#ffffff",
-        borderTop: "1px solid #e5e7eb",
-        padding: "12px 24px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        zIndex: 10,
-      }}>
-        <span style={{ fontSize: 14, color: "#6b7280" }}>
+      <div
+        className="sticky bottom-0 bg-background border-t border-border px-6 flex items-center justify-between z-10"
+        style={{ height: 60 }}
+      >
+        <span className="text-small" style={{ color: "var(--muted-foreground)" }}>
           Generated with confidence: {overallPct}%
         </span>
-        <button
+        <Button
+          size="lg"
           onClick={handleApprove}
           disabled={gateBlocked}
-          style={{
-            padding: "10px 24px",
-            fontSize: 15,
-            fontWeight: 600,
-            border: "none",
-            borderRadius: 6,
-            cursor: gateBlocked ? "not-allowed" : "pointer",
-            background: approveBg,
-            color: approveColor,
-            transition: "background 150ms ease",
-          }}
+          className={cn(
+            "h-12 font-semibold",
+            gateBlocked
+              ? "bg-secondary text-muted-foreground cursor-not-allowed"
+              : gateWarning
+              ? "bg-orange-500 hover:bg-orange-600 text-white"
+              : "bg-primary hover:bg-primary/90 text-primary-foreground"
+          )}
         >
           {approveLabel}
-        </button>
+        </Button>
       </div>
     </div>
   );

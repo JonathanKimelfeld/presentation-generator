@@ -1,0 +1,173 @@
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  .theme {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Geist Variable', -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  }
+
+  :root {
+    /* Warm off-white backgrounds */
+    --background:        oklch(0.978 0.003 57);   /* #faf9f7 */
+    --foreground:        oklch(0.148 0.005 57);   /* #1a1816 */
+
+    --card:              oklch(1 0 0);             /* pure white */
+    --card-foreground:   oklch(0.148 0.005 57);
+
+    --popover:           oklch(1 0 0);
+    --popover-foreground: oklch(0.148 0.005 57);
+
+    /* Warm green primary — #16a34a */
+    --primary:           oklch(0.600 0.173 151);
+    --primary-foreground: oklch(1 0 0);
+
+    --secondary:         oklch(0.934 0.007 57);   /* #ede9e4 */
+    --secondary-foreground: oklch(0.215 0.005 57);
+
+    --muted:             oklch(0.960 0.004 57);   /* #f5f3f0 */
+    --muted-foreground:  oklch(0.484 0.012 57);   /* #716b64 */
+
+    --accent:            oklch(0.934 0.007 57);
+    --accent-foreground: oklch(0.215 0.005 57);
+
+    --destructive:       oklch(0.577 0.245 27.325);
+    --destructive-foreground: oklch(1 0 0);
+
+    --border:            oklch(0.880 0.010 57);   /* #e3ddd7 */
+    --input:             oklch(0.880 0.010 57);
+    --ring:              oklch(0.600 0.173 151);  /* green focus ring */
+
+    --radius: 0.625rem;
+
+    /* Sidebar */
+    --sidebar:                oklch(0.960 0.004 57);
+    --sidebar-foreground:     oklch(0.148 0.005 57);
+    --sidebar-primary:        oklch(0.600 0.173 151);
+    --sidebar-primary-foreground: oklch(1 0 0);
+    --sidebar-accent:         oklch(0.934 0.007 57);
+    --sidebar-accent-foreground: oklch(0.215 0.005 57);
+    --sidebar-border:         oklch(0.880 0.010 57);
+    --sidebar-ring:           oklch(0.600 0.173 151);
+  }
+
+  .dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.600 0.173 151);
+    --primary-foreground: oklch(1 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.600 0.173 151);
+  }
+
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* ── Typography scale ──────────────────────────────────────────────────────── */
+
+.text-display {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.text-heading {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.text-subheading {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: oklch(var(--muted-foreground));
+}
+.text-body {
+  font-size: 15px;
+  line-height: 1.65;
+}
+.text-small {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.text-micro {
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+
+/* ── Global polish ─────────────────────────────────────────────────────────── */
+
+/* Smooth transitions on interactive elements */
+button, a, input, select, textarea, [role="button"] {
+  transition-property: background-color, border-color, color, opacity, box-shadow, transform;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}
+
+/* Focus rings */
+:focus-visible {
+  outline: 2px solid oklch(0.600 0.173 151);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+/* Thin warm scrollbars */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: oklch(0.880 0.010 57);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.720 0.010 57);
+}
+
+/* Selection */
+::selection {
+  background: oklch(0.600 0.173 151 / 0.15);
+}
+
+/* Toast slide-in animation */
+@keyframes toast-in {
+  from { transform: translateX(110%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+/* Shimmer animation */
+@keyframes _shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+/* Spinner */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

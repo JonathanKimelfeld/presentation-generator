@@ -19,6 +19,19 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Slider } from "@/components/ui/slider";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 const DEFAULT_CONFIG: PresentationConfig = {
   audience: "",
@@ -47,15 +60,11 @@ function PriorityPill({ id, label }: { id: string; label: string }) {
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
-        padding: "4px 12px",
-        background: isDragging ? "#dbeafe" : "#f3f4f6",
-        border: "1px solid #e5e7eb",
-        borderRadius: 20,
-        fontSize: 13,
-        cursor: "grab",
-        userSelect: "none",
-        opacity: isDragging ? 0.6 : 1,
       }}
+      className={cn(
+        "px-3 py-1 rounded-full text-small border border-border bg-secondary cursor-grab select-none",
+        isDragging && "bg-primary/10 border-primary opacity-60"
+      )}
     >
       {label}
     </div>
@@ -131,244 +140,296 @@ export default function NewPresentation() {
   };
 
   return (
-    <div style={{ maxWidth: 640, margin: "80px auto", padding: "0 16px" }}>
-      <h1 style={{ marginBottom: 24 }}>New Presentation</h1>
-
-      <input
-        type="text"
-        placeholder="What is your presentation about?"
-        value={topic}
-        onChange={(e) => setTopic(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
-        style={{ width: "100%", fontSize: 18, padding: "12px 16px", boxSizing: "border-box", borderRadius: 6, border: "1px solid #ccc" }}
-      />
-
-      <div style={{ marginTop: 16 }}>
-        <button onClick={toggleConfig} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: 14 }}>
-          {isConfigOpen ? "▾ Hide advanced options" : "▸ Advanced options"}
-        </button>
-      </div>
-
-      {isConfigOpen && (
-        <div style={{ marginTop: 16, padding: 16, border: "1px solid #ddd", borderRadius: 6, display: "grid", gap: 12 }}>
-          <label>
-            Audience
-            <input
-              type="text"
-              value={config.audience}
-              onChange={(e) => updateConfig("audience", e.target.value)}
-              style={{ display: "block", width: "100%", marginTop: 4, padding: "6px 8px", boxSizing: "border-box" }}
-            />
-          </label>
-
-          <label>
-            Tone
-            <select
-              value={config.tone}
-              onChange={(e) => updateConfig("tone", e.target.value as PresentationConfig["tone"])}
-              style={{ display: "block", marginTop: 4, padding: "6px 8px" }}
-            >
-              <option value="formal">Formal</option>
-              <option value="casual">Casual</option>
-              <option value="technical">Technical</option>
-            </select>
-          </label>
-
-          <label>
-            Depth: {config.depth}
-            <input
-              type="range"
-              min={1}
-              max={5}
-              value={config.depth}
-              onChange={(e) => updateConfig("depth", Number(e.target.value))}
-              style={{ display: "block", width: "100%", marginTop: 4 }}
-            />
-          </label>
-
-          <label>
-            Length: {config.length} min
-            <input
-              type="range"
-              min={5}
-              max={60}
-              step={5}
-              value={config.length}
-              onChange={(e) => updateConfig("length", Number(e.target.value))}
-              style={{ display: "block", width: "100%", marginTop: 4 }}
-            />
-          </label>
-
-          <label>
-            Compactness: {config.compactness}
-            <input
-              type="range"
-              min={1}
-              max={5}
-              value={config.compactness}
-              onChange={(e) => updateConfig("compactness", Number(e.target.value))}
-              style={{ display: "block", width: "100%", marginTop: 4 }}
-            />
-          </label>
-
-          <label>
-            Scope
-            <input
-              type="text"
-              value={config.scope}
-              onChange={(e) => updateConfig("scope", e.target.value)}
-              style={{ display: "block", width: "100%", marginTop: 4, padding: "6px 8px", boxSizing: "border-box" }}
-            />
-          </label>
-
-          <label>
-            Style
-            <select
-              value={config.style}
-              onChange={(e) => updateConfig("style", e.target.value as PresentationConfig["style"])}
-              style={{ display: "block", marginTop: 4, padding: "6px 8px" }}
-            >
-              <option value="minimal">Minimal</option>
-              <option value="detailed">Detailed</option>
-              <option value="visual">Visual</option>
-            </select>
-          </label>
-
-          <div>
-            <label style={{ display: "block", marginBottom: 8, fontWeight: 500, fontSize: 14 }}>
-              Slide content style
-            </label>
-            <div style={{ display: "flex", gap: 8 }}>
-              {(
-                [
-                  { value: "verbose", label: "Verbose", subtext: "Best for learning and self-study" },
-                  { value: "minimal", label: "Minimal", subtext: "Best for presenting to an audience" },
-                ] as { value: "verbose" | "minimal"; label: string; subtext: string }[]
-              ).map(({ value, label, subtext }) => (
-                <div
-                  key={value}
-                  onClick={() => updateConfig("content_mode", value)}
-                  style={{
-                    width: "calc(50% - 4px)",
-                    border: config.content_mode === value ? "2px solid #16a34a" : "1px solid #e5e7eb",
-                    background: config.content_mode === value ? "#f0fdf4" : "#ffffff",
-                    borderRadius: 8,
-                    padding: "12px 16px",
-                    cursor: "pointer",
-                    boxSizing: "border-box" as const,
-                  }}
-                >
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>
-                    {config.content_mode === value ? "● " : "○ "}{label}
-                  </div>
-                  <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{subtext}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={config.include_visuals}
-              onChange={(e) => updateConfig("include_visuals", e.target.checked)}
-              style={{ accentColor: "#16a34a", width: 15, height: 15 }}
-            />
-            Include visual slides (one image per topic)
-          </label>
-
-          <div>
-            <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
-              Resources to include
-            </label>
-            {[
-              { key: "videos", label: "Videos" },
-              { key: "papers", label: "Academic papers" },
-              { key: "courses", label: "Online courses" },
-              { key: "articles", label: "Articles & websites" },
-            ].map(({ key, label }) => (
-              <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 14, cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={config.resource_filters[key as keyof typeof config.resource_filters]}
-                  onChange={(e) =>
-                    updateConfig("resource_filters", {
-                      ...config.resource_filters,
-                      [key]: e.target.checked,
-                    })
-                  }
-                  style={{ accentColor: "#16a34a", width: 15, height: 15 }}
-                />
-                {label}
-              </label>
-            ))}
-          </div>
-
-          <div>
-            <label style={{ display: "block", marginBottom: 8, fontWeight: 500, fontSize: 14 }}>
-              Prioritize by
-            </label>
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handlePriorityDragEnd}>
-              <SortableContext items={config.resource_priority} strategy={horizontalListSortingStrategy}>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {config.resource_priority.map((type) => {
-                    const labels: Record<string, string> = {
-                      video: "Videos",
-                      paper: "Papers",
-                      course: "Courses",
-                      article: "Articles",
-                    };
-                    return <PriorityPill key={type} id={type} label={labels[type] ?? type} />;
-                  })}
-                </div>
-              </SortableContext>
-            </DndContext>
-          </div>
-        </div>
-      )}
-
+    <div className="max-w-[560px] mx-auto px-6" style={{ paddingTop: 80, paddingBottom: 80 }}>
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
 
-      <button
+      {/* Header */}
+      <div className="text-subheading mb-3">AI Presentation Generator</div>
+      <h1 className="text-display">What do you want to learn about?</h1>
+      <p className="text-small mt-2" style={{ color: "var(--muted-foreground)" }}>
+        Enter a topic and we'll build a full presentation.
+      </p>
+
+      {/* Topic input */}
+      <Input
+        type="text"
+        placeholder="e.g. The Central Limit Theorem, Chess openings..."
+        value={topic}
+        onChange={(e) => setTopic(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
+        className="h-13 text-base mt-8"
+      />
+
+      {/* Generate button */}
+      <Button
+        size="lg"
         onClick={handleGenerate}
         disabled={!topic.trim()}
-        style={{
-          marginTop: 24,
-          padding: "12px 32px",
-          fontSize: 16,
-          background: isGenerating ? "#dc2626" : "#2563eb",
-          color: "#fff",
-          border: "none",
-          borderRadius: 6,
-          cursor: topic.trim() ? "pointer" : "not-allowed",
-          opacity: !topic.trim() ? 0.5 : 1,
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 10,
-          transition: "background 200ms ease",
-        }}
+        className={cn(
+          "w-full mt-4 h-13 text-base font-semibold",
+          isGenerating
+            ? "bg-red-600 hover:bg-red-700 text-white"
+            : "bg-primary hover:bg-primary/90 text-primary-foreground"
+        )}
       >
         {isGenerating && (
-          <span style={{
-            width: 16,
-            height: 16,
-            border: "2px solid rgba(255,255,255,0.35)",
-            borderTopColor: "#fff",
-            borderRadius: "50%",
-            display: "inline-block",
-            animation: "spin 0.7s linear infinite",
-            flexShrink: 0,
-          }} />
+          <span
+            style={{
+              width: 16,
+              height: 16,
+              border: "2px solid rgba(255,255,255,0.35)",
+              borderTopColor: "#fff",
+              borderRadius: "50%",
+              display: "inline-block",
+              animation: "spin 0.7s linear infinite",
+              flexShrink: 0,
+              marginRight: 8,
+            }}
+          />
         )}
-        {isGenerating ? "Cancel" : "Generate"}
-      </button>
+        {isGenerating ? "Generating…" : "Generate Presentation"}
+      </Button>
 
       {isGenerating && (
-        <p style={{ marginTop: 12, fontSize: 13, color: "#888" }}>
+        <p className="text-small mt-3" style={{ color: "var(--muted-foreground)" }}>
           Building your presentation — this may take a minute
         </p>
+      )}
+
+      {/* Advanced toggle */}
+      <button
+        onClick={toggleConfig}
+        className="text-small mt-4 cursor-pointer bg-transparent border-0 p-0"
+        style={{ color: "var(--muted-foreground)" }}
+      >
+        ⚙ {isConfigOpen ? "Hide options" : "Advanced options"}
+      </button>
+
+      {/* Config panel */}
+      {isConfigOpen && (
+        <Card className="mt-4 border border-border">
+          <CardContent className="p-6 grid gap-5">
+
+            {/* Audience */}
+            <div>
+              <label className="text-small font-medium">Audience</label>
+              <Input
+                value={config.audience}
+                onChange={(e) => updateConfig("audience", e.target.value)}
+                className="mt-1.5"
+              />
+            </div>
+
+            <Separator className="my-1" />
+
+            {/* Tone */}
+            <div>
+              <label className="text-small font-medium">Tone</label>
+              <Select
+                value={config.tone}
+                onValueChange={(v) => updateConfig("tone", v as PresentationConfig["tone"])}
+              >
+                <SelectTrigger className="mt-1.5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="formal">Formal</SelectItem>
+                  <SelectItem value="casual">Casual</SelectItem>
+                  <SelectItem value="technical">Technical</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Separator className="my-1" />
+
+            {/* Depth slider */}
+            <div>
+              <div className="flex justify-between text-small">
+                <label>Depth</label>
+                <span style={{ color: "var(--muted-foreground)" }}>{config.depth}/5</span>
+              </div>
+              <Slider
+                min={1}
+                max={5}
+                step={1}
+                value={[config.depth]}
+                onValueChange={(v) => { const arr = v as number[]; updateConfig("depth", arr[0]); }}
+                className="mt-2"
+              />
+            </div>
+
+            {/* Length slider */}
+            <div>
+              <div className="flex justify-between text-small">
+                <label>Length</label>
+                <span style={{ color: "var(--muted-foreground)" }}>{config.length} min</span>
+              </div>
+              <Slider
+                min={5}
+                max={60}
+                step={5}
+                value={[config.length]}
+                onValueChange={(v) => { const arr = v as number[]; updateConfig("length", arr[0]); }}
+                className="mt-2"
+              />
+            </div>
+
+            {/* Compactness slider */}
+            <div>
+              <div className="flex justify-between text-small">
+                <label>Compactness</label>
+                <span style={{ color: "var(--muted-foreground)" }}>{config.compactness}/5</span>
+              </div>
+              <Slider
+                min={1}
+                max={5}
+                step={1}
+                value={[config.compactness]}
+                onValueChange={(v) => { const arr = v as number[]; updateConfig("compactness", arr[0]); }}
+                className="mt-2"
+              />
+            </div>
+
+            <Separator className="my-1" />
+
+            {/* Scope */}
+            <div>
+              <label className="text-small font-medium">Scope</label>
+              <Input
+                value={config.scope}
+                onChange={(e) => updateConfig("scope", e.target.value)}
+                className="mt-1.5"
+              />
+            </div>
+
+            {/* Style */}
+            <div>
+              <label className="text-small font-medium">Style</label>
+              <Select
+                value={config.style}
+                onValueChange={(v) => updateConfig("style", v as PresentationConfig["style"])}
+              >
+                <SelectTrigger className="mt-1.5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="minimal">Minimal</SelectItem>
+                  <SelectItem value="detailed">Detailed</SelectItem>
+                  <SelectItem value="visual">Visual</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Separator className="my-1" />
+
+            {/* Content mode */}
+            <div>
+              <label className="text-small font-medium block mb-2">Slide content style</label>
+              <div className="flex gap-3">
+                {(
+                  [
+                    { value: "verbose", label: "Verbose", subtext: "Best for learning and self-study" },
+                    { value: "minimal", label: "Minimal", subtext: "Best for presenting to an audience" },
+                  ] as { value: "verbose" | "minimal"; label: string; subtext: string }[]
+                ).map(({ value, label, subtext }) => (
+                  <Card
+                    key={value}
+                    onClick={() => updateConfig("content_mode", value)}
+                    className={cn(
+                      "flex-1 cursor-pointer transition-colors",
+                      config.content_mode === value
+                        ? "border-primary bg-primary/5"
+                        : "border hover:bg-muted/50"
+                    )}
+                  >
+                    <CardContent className="p-3">
+                      <div className="text-small font-semibold">
+                        {config.content_mode === value ? "● " : "○ "}{label}
+                      </div>
+                      <div className="text-micro mt-1" style={{ color: "var(--muted-foreground)" }}>
+                        {subtext}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+
+            <Separator className="my-1" />
+
+            {/* Include visuals checkbox */}
+            <label className="flex items-center gap-2.5 text-small cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.include_visuals}
+                onChange={(e) => updateConfig("include_visuals", e.target.checked)}
+                className="accent-primary w-4 h-4"
+              />
+              Include visual slides (one image per topic)
+            </label>
+
+            {/* Resources to include */}
+            <div>
+              <label className="text-small font-medium block mb-2">Resources to include</label>
+              {[
+                { key: "videos", label: "Videos" },
+                { key: "papers", label: "Academic papers" },
+                { key: "courses", label: "Online courses" },
+                { key: "articles", label: "Articles & websites" },
+              ].map(({ key, label }) => (
+                <label
+                  key={key}
+                  className="flex items-center gap-2.5 text-small cursor-pointer mb-1.5"
+                >
+                  <input
+                    type="checkbox"
+                    checked={config.resource_filters[key as keyof typeof config.resource_filters]}
+                    onChange={(e) =>
+                      updateConfig("resource_filters", {
+                        ...config.resource_filters,
+                        [key]: e.target.checked,
+                      })
+                    }
+                    className="accent-primary w-4 h-4"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+
+            <Separator className="my-1" />
+
+            {/* Priority pills (DnD) */}
+            <div>
+              <label className="text-small font-medium block mb-2">Prioritize by</label>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handlePriorityDragEnd}
+              >
+                <SortableContext
+                  items={config.resource_priority}
+                  strategy={horizontalListSortingStrategy}
+                >
+                  <div className="flex gap-2 flex-wrap">
+                    {config.resource_priority.map((type) => {
+                      const labels: Record<string, string> = {
+                        video: "Videos",
+                        paper: "Papers",
+                        course: "Courses",
+                        article: "Articles",
+                      };
+                      return <PriorityPill key={type} id={type} label={labels[type] ?? type} />;
+                    })}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            </div>
+
+          </CardContent>
+        </Card>
       )}
     </div>
   );

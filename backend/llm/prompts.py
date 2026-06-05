@@ -126,7 +126,7 @@ Return this exact JSON shape and nothing else:
 }}
 
 Layout content shapes:
-- bullets:   {{ "bullets": ["string", ...], "source_refs": [<int>, ...] }}
+- bullets:   {{ "subtitle": "string", "bullets": ["string", ...], "source_refs": [<int>, ...] }}
 - narrative: {{ "subtitle": "string", "paragraphs": ["string", ...], "source_refs": [<int>, ...] }}
 - mixed:     {{ "subtitle": "string", "intro": "string", "bullets": ["string", ...], "source_refs": [<int>, ...] }}
 - title:     {{ "heading": "string", "subheading": "string" }}
@@ -186,6 +186,11 @@ Bullets are concise — label + brief explanation, not long sentences.
 No prose paragraphs.
 Source refs still included where relevant.
 Speaker notes remain full explanations regardless.
+
+Bullets subtitle rule (both modes):
+Every bullets slide MUST include a subtitle field — a short, specific statement or question that frames the bullets.
+Bad:  "subtitle": "Key points"
+Good: "subtitle": "Why the central limit theorem works in practice"
 
 ## SOURCE REFERENCE RULES (apply to both modes)
 
